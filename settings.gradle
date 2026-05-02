@@ -1,7 +1,7 @@
+// Slimmed for the emochi-cdp-modernization fork: we only ship :stetho and
+// :stetho-okhttp3 since that's what emochi-android consumes, and bringing
+// in the rest (stetho-sample, stetho-js-rhino, stetho-timber, …) drags
+// along jcenter-only dependencies and Rhino which neither the fork nor
+// the host app needs.
 include ':stetho'
-include ':stetho-urlconnection'
-include ':stetho-okhttp'
 include ':stetho-okhttp3'
-include ':stetho-js-rhino'
-include ':stetho-sample'
-include ':stetho-timber'

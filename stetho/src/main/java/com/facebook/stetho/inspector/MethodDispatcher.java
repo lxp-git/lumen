@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import com.facebook.stetho.common.ExceptionUtil;
+import com.facebook.stetho.common.LogUtil;
 import com.facebook.stetho.common.Util;
 import com.facebook.stetho.inspector.jsonrpc.JsonRpcException;
 import com.facebook.stetho.inspector.jsonrpc.JsonRpcPeer;
@@ -57,9 +58,16 @@ public class MethodDispatcher {
       throws JsonRpcException {
     MethodDispatchHelper dispatchHelper = findMethodDispatcher(methodName);
     if (dispatchHelper == null) {
-      throw new JsonRpcException(new JsonRpcError(JsonRpcError.ErrorCode.METHOD_NOT_FOUND,
-          "Not implemented: " + methodName,
-          null /* data */));
+      // Modern Chrome DevTools frontends call dozens of init-time methods that
+      // Stetho doesn't implement (Target.*, Storage.*, Overlay.*, Audits.*,
+      // Animation.*, Autofill.*, Log.*, Emulation.*, ServiceWorker.*, …). The
+      // canonical METHOD_NOT_FOUND response made the frontend stall its init
+      // pipeline and refuse to render the Network panel. Acknowledging with an
+      // empty success result keeps the handshake moving and is harmless: the
+      // panels backed by these methods will simply render as empty rather than
+      // failing — and we only care about Network here anyway.
+      LogUtil.v("Stub-acknowledging unimplemented method: %s", methodName);
+      return new JSONObject();
     }
     try {
       return dispatchHelper.invoke(peer, params);

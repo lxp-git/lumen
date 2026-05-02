@@ -47,10 +47,13 @@ import com.facebook.stetho.inspector.protocol.module.DatabaseDriver2;
 import com.facebook.stetho.inspector.protocol.module.Debugger;
 import com.facebook.stetho.inspector.protocol.module.HeapProfiler;
 import com.facebook.stetho.inspector.protocol.module.Inspector;
+import com.facebook.stetho.inspector.protocol.module.Browser;
 import com.facebook.stetho.inspector.protocol.module.Network;
 import com.facebook.stetho.inspector.protocol.module.Page;
 import com.facebook.stetho.inspector.protocol.module.Profiler;
 import com.facebook.stetho.inspector.protocol.module.Runtime;
+import com.facebook.stetho.inspector.protocol.module.Storage;
+import com.facebook.stetho.inspector.protocol.module.Target;
 import com.facebook.stetho.inspector.protocol.module.Worker;
 import com.facebook.stetho.inspector.runtime.RhinoDetectingRuntimeReplFactory;
 import com.facebook.stetho.server.AddressNameHelper;
@@ -367,6 +370,7 @@ public class Stetho {
     }
 
     public Iterable<ChromeDevtoolsDomain> finish() {
+      provideIfDesired(new Browser());
       provideIfDesired(new Console());
       provideIfDesired(new Debugger());
       DocumentProviderFactory documentModel = resolveDocumentProvider();
@@ -386,6 +390,8 @@ public class Stetho {
               mRuntimeRepl != null ?
               mRuntimeRepl :
               new RhinoDetectingRuntimeReplFactory(mContext)));
+      provideIfDesired(new Storage());
+      provideIfDesired(new Target());
       provideIfDesired(new Worker());
       if (Build.VERSION.SDK_INT >= DatabaseConstants.MIN_API_LEVEL) {
         Database database = new Database();
