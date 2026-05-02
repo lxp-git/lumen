@@ -1,4 +1,5 @@
 apply plugin: 'com.android.library'
+apply plugin: 'maven-publish'
 
 android {
     namespace 'com.facebook.stetho.okhttp3'
@@ -17,6 +18,12 @@ android {
     lintOptions {
         abortOnError false
     }
+
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+        }
+    }
 }
 
 dependencies {
@@ -25,4 +32,14 @@ dependencies {
     // OkHttp 4.x is wire-compatible with the 3.x API stetho-okhttp3 was
     // originally built against and matches emochi-android's runtime version.
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+            }
+        }
+    }
 }

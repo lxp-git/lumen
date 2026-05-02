@@ -1,4 +1,5 @@
 apply plugin: 'com.android.library'
+apply plugin: 'maven-publish'
 
 android {
     namespace 'com.facebook.stetho'
@@ -21,6 +22,15 @@ android {
         // they're never reached on Android but lint still warns.
         abortOnError false
     }
+
+    // JitPack invokes `publishToMavenLocal`, which requires the library to
+    // declare which variant to publish. Picking `release` keeps the binary
+    // free of test/debug-only symbols.
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+        }
+    }
 }
 
 dependencies {
@@ -29,4 +39,17 @@ dependencies {
     implementation 'androidx.annotation:annotation:1.7.1'
     // Optional: reflection probes whether Fragment / AndroidX core are present at runtime.
     implementation 'androidx.appcompat:appcompat:1.6.1'
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+                // groupId / version are injected by JitPack via -Pgroup= and
+                // -Pversion= command-line properties; artifactId defaults to
+                // the project name (`stetho`).
+            }
+        }
+    }
 }
