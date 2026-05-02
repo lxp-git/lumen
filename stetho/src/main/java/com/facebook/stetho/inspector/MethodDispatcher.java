@@ -66,7 +66,7 @@ public class MethodDispatcher {
       // empty success result keeps the handshake moving and is harmless: the
       // panels backed by these methods will simply render as empty rather than
       // failing — and we only care about Network here anyway.
-      LogUtil.v("Stub-acknowledging unimplemented method: %s", methodName);
+      LogUtil.d("Stub-acknowledging unimplemented method: %s", methodName);
       return new JSONObject();
     }
     try {
