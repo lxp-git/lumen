@@ -1,21 +1,24 @@
 buildscript {
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:4.1.2'
+        // Aligned with the emochi-android consumer (AGP 8.9.1 / Gradle 8.14)
+        // so the fork can be plugged in via `includeBuild` without forcing a
+        // second toolchain into the host project.
+        classpath 'com.android.tools.build:gradle:8.9.1'
     }
 }
 
 allprojects {
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 }
 
 ext {
-    compileSdkVersion = 30
-    targetSdkVersion = 30
+    compileSdkVersion = 36
+    targetSdkVersion = 36
 }

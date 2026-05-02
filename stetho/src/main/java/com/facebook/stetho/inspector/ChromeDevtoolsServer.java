@@ -39,7 +39,20 @@ import org.json.JSONObject;
 public class ChromeDevtoolsServer implements SimpleEndpoint {
   private static final String TAG = "ChromeDevtoolsServer";
 
-  public static final String PATH = "/inspector";
+  /**
+   * WebSocket endpoint path advertised in {@code /json/list[.webSocketDebuggerUrl]}.
+   *
+   * <p>Mirrors Android WebView's {@code DevToolsManagerDelegate} which exposes
+   * each page at {@code /devtools/page/<targetId>}. Chrome's built-in
+   * frontend (loaded via {@code chrome-devtools://devtools/bundled/inspector.html})
+   * expects this exact shape; the legacy {@code /inspector} path Stetho used to
+   * advertise routes through Chrome's "fallback frontend" loader instead, which
+   * triggers stricter CSP and breaks modern Chrome's inspect link.</p>
+   *
+   * <p>Stetho only exposes a single conceptual page per process, so the
+   * {@code targetId} segment is a constant.</p>
+   */
+  public static final String PATH = "/devtools/page/1";
 
   private final ObjectMapper mObjectMapper;
   private final MethodDispatcher mMethodDispatcher;

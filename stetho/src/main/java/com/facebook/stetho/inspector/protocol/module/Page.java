@@ -199,6 +199,45 @@ public class Page implements ChromeDevtoolsDomain {
   public void setShowViewportSizeOnResize(JsonRpcPeer peer, JSONObject params) {
   }
 
+  /**
+   * Modern Chrome DevTools frontends call this on every session start to
+   * populate the back/forward navigation buttons. Stetho doesn't model a
+   * navigation stack, so we return a single synthetic entry pointing at
+   * ourselves — enough to keep the frontend's init path moving.
+   */
+  @ChromeDevtoolsMethod
+  public JsonRpcResult getNavigationHistory(JsonRpcPeer peer, JSONObject params) {
+    NavigationHistoryEntry entry = new NavigationHistoryEntry();
+    entry.id = 0;
+    entry.url = "stetho://" + ProcessUtil.getProcessName();
+    entry.userTypedURL = entry.url;
+    entry.title = ProcessUtil.getProcessName();
+    entry.transitionType = "typed";
+    GetNavigationHistoryResponse result = new GetNavigationHistoryResponse();
+    result.currentIndex = 0;
+    result.entries = Collections.singletonList(entry);
+    return result;
+  }
+
+  /**
+   * Frontends register init-time scripts here; we acknowledge with a synthetic
+   * identifier but never run anything (there's no JS context to run in).
+   */
+  @ChromeDevtoolsMethod
+  public JsonRpcResult addScriptToEvaluateOnNewDocument(JsonRpcPeer peer, JSONObject params) {
+    AddScriptResponse result = new AddScriptResponse();
+    result.identifier = "stetho-noop-script";
+    return result;
+  }
+
+  @ChromeDevtoolsMethod
+  public void removeScriptToEvaluateOnNewDocument(JsonRpcPeer peer, JSONObject params) {
+  }
+
+  @ChromeDevtoolsMethod
+  public void setAdBlockingEnabled(JsonRpcPeer peer, JSONObject params) {
+  }
+
   private static class GetResourceTreeParams implements JsonRpcResult {
     @JsonProperty(required = true)
     public FrameResourceTree frameTree;
@@ -311,5 +350,20 @@ public class Page implements ChromeDevtoolsDomain {
     public int maxHeight;
   }
 
+  private static class NavigationHistoryEntry {
+    @JsonProperty(required = true) public int id;
+    @JsonProperty(required = true) public String url;
+    @JsonProperty(required = true) public String userTypedURL;
+    @JsonProperty(required = true) public String title;
+    @JsonProperty(required = true) public String transitionType;
+  }
 
+  private static class GetNavigationHistoryResponse implements JsonRpcResult {
+    @JsonProperty(required = true) public int currentIndex;
+    @JsonProperty(required = true) public List<NavigationHistoryEntry> entries;
+  }
+
+  private static class AddScriptResponse implements JsonRpcResult {
+    @JsonProperty(required = true) public String identifier;
+  }
 }
