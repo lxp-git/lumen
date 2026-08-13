@@ -143,7 +143,7 @@ public class Page implements ChromeDevtoolsDomain {
 
   @ChromeDevtoolsMethod
   public JsonRpcResult canScreencast(JsonRpcPeer peer, JSONObject params) {
-    return new SimpleBooleanResult(true);
+    return new SimpleBooleanResult(false);
   }
 
   @ChromeDevtoolsMethod
@@ -161,12 +161,7 @@ public class Page implements ChromeDevtoolsDomain {
 
   @ChromeDevtoolsMethod
   public void startScreencast(final JsonRpcPeer peer, JSONObject params) {
-    final StartScreencastRequest request = mObjectMapper.convertValue(
-        params, StartScreencastRequest.class);
-    if (mScreencastDispatcher == null) {
-      mScreencastDispatcher = new ScreencastDispatcher();
-      mScreencastDispatcher.startScreencast(peer, request);
-    }
+    // Not wired. Leave ScreencastDispatcher in tree; do not start capture.
   }
 
   @ChromeDevtoolsMethod

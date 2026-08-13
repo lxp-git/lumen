@@ -35,7 +35,7 @@ public class Browser implements ChromeDevtoolsDomain {
     GetVersionResponse result = new GetVersionResponse();
     result.protocolVersion = "1.3";
     result.product = "Stetho";
-    result.revision = "stetho-emochi-fork";
+    result.revision = "1.6.1-SNAPSHOT";
     result.userAgent = "Stetho (Android " + Build.VERSION.RELEASE +
         "; API " + Build.VERSION.SDK_INT +
         "; " + Build.MANUFACTURER + " " + Build.MODEL + ")";

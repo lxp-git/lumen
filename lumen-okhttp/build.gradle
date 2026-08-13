@@ -1,0 +1,35 @@
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'maven-publish'
+
+android {
+    namespace 'dev.lumen.okhttp'
+    compileSdkVersion rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+}
+
+dependencies {
+    api project(':lumen-runtime')
+    implementation 'com.google.code.findbugs:jsr305:3.0.2'
+    // Host apps already ship OkHttp. Do not force a version on consumers.
+    compileOnly "com.squareup.okhttp3:okhttp:${rootProject.ext.okhttpVersion}"
+}
+
+apply from: rootProject.file('gradle/lumen-maven-publish.gradle')

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Auto-start the agent before Application.onCreate. Host apps need no glue code. -->
+    <application>
+        <provider
+            android:name="dev.lumen.init.LumenSocketProvider"
+            android:authorities="${applicationId}.lumen-socket"
+            android:exported="false"
+            android:initOrder="2147483647" />
+        <provider
+            android:name="dev.lumen.init.LumenInitProvider"
+            android:authorities="${applicationId}.lumen-init"
+            android:exported="false"
+            android:initOrder="1000" />
+        <!-- Exported for `adb shell content call` / `am start` only. Plugin is debug-only. -->
+        <provider
+            android:name="dev.lumen.init.LumenAdbProvider"
+            android:authorities="${applicationId}.lumen-adb"
+            android:exported="true" />
+        <activity
+            android:name="dev.lumen.ui.LumenLogSegmentsActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.AppCompat.DayNight.DialogWhenLarge" />
+    </application>
+
+</manifest>

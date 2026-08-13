@@ -1,0 +1,356 @@
+/*
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+package dev.lumen.inspector.protocol.module;
+
+import android.content.Context;
+
+import dev.lumen.common.ProcessUtil;
+import dev.lumen.inspector.domstorage.SharedPreferencesHelper;
+import dev.lumen.inspector.jsonrpc.JsonRpcPeer;
+import dev.lumen.inspector.jsonrpc.JsonRpcResult;
+import dev.lumen.inspector.protocol.ChromeDevtoolsDomain;
+import dev.lumen.inspector.protocol.ChromeDevtoolsMethod;
+import dev.lumen.inspector.screencast.ScreencastDispatcher;
+import dev.lumen.json.ObjectMapper;
+import dev.lumen.json.annotation.JsonProperty;
+import dev.lumen.json.annotation.JsonValue;
+
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+
+import androidx.annotation.Nullable;
+
+public class Page implements ChromeDevtoolsDomain {
+  public static final String BANNER = "Lumen attached";
+
+
+  private final Context mContext;
+  private final String mMessage;
+  private final ObjectMapper mObjectMapper = new ObjectMapper();
+  @Nullable
+  private ScreencastDispatcher mScreencastDispatcher;
+
+  public Page(Context context) {
+    this(context, BANNER);
+  }
+
+  public Page(Context context, String message) {
+    mContext = context;
+    mMessage = message;
+  }
+
+  @ChromeDevtoolsMethod
+  public void enable(JsonRpcPeer peer, JSONObject params) {
+    notifyExecutionContexts(peer);
+    sendWelcomeMessage(peer);
+  }
+
+  @ChromeDevtoolsMethod
+  public void disable(JsonRpcPeer peer, JSONObject params) {
+  }
+
+  private void notifyExecutionContexts(JsonRpcPeer peer) {
+    ExecutionContextDescription context = new ExecutionContextDescription();
+    context.frameId = "1";
+    context.id = 1;
+    ExecutionContextCreatedParams params = new ExecutionContextCreatedParams();
+    params.context = context;
+    peer.invokeMethod("Runtime.executionContextCreated", params, null /* callback */);
+  }
+
+  private void sendWelcomeMessage(JsonRpcPeer peer) {
+    Console.ConsoleMessage message = new Console.ConsoleMessage();
+    message.source = Console.MessageSource.JAVASCRIPT;
+    message.level = Console.MessageLevel.LOG;
+    message.text = mMessage + "\n" + "          Attached to " + ProcessUtil.getProcessName() + "\n";
+    Console.MessageAddedRequest messageAddedRequest = new Console.MessageAddedRequest();
+    messageAddedRequest.message = message;
+    peer.invokeMethod("Console.messageAdded", messageAddedRequest, null /* callback */);
+  }
+
+  // Dog science...
+  @ChromeDevtoolsMethod
+  public JsonRpcResult getResourceTree(JsonRpcPeer peer, JSONObject params) {
+    // The DOMStorage module expects one key/value store per "security origin" which has a 1:1
+    // relationship with resource tree frames.
+    List<String> prefsTags = SharedPreferencesHelper.getSharedPreferenceTags(mContext);
+    Iterator<String> prefsTagsIter = prefsTags.iterator();
+
+    FrameResourceTree tree = createSimpleFrameResourceTree(
+        "1",
+        null /* parentId */,
+        "Lumen",
+        prefsTagsIter.hasNext() ? prefsTagsIter.next() : "");
+    if (tree.childFrames == null) {
+      tree.childFrames = new ArrayList<FrameResourceTree>();
+    }
+
+    int nextChildFrameId = 1;
+    while (prefsTagsIter.hasNext()) {
+      String frameId = "1." + (nextChildFrameId++);
+      String prefsTag = prefsTagsIter.next();
+      FrameResourceTree child = createSimpleFrameResourceTree(
+          frameId,
+          "1",
+          "Child #" + frameId,
+          prefsTag);
+      tree.childFrames.add(child);
+    }
+
+    GetResourceTreeParams resultParams = new GetResourceTreeParams();
+    resultParams.frameTree = tree;
+    return resultParams;
+  }
+
+  private static FrameResourceTree createSimpleFrameResourceTree(
+      String id,
+      String parentId,
+      String name,
+      String securityOrigin) {
+    Frame frame = new Frame();
+    frame.id = id;
+    frame.parentId = parentId;
+    frame.loaderId = "1";
+    frame.name = name;
+    frame.url = "";
+    frame.securityOrigin = securityOrigin;
+    frame.mimeType = "text/plain";
+    FrameResourceTree tree = new FrameResourceTree();
+    tree.frame = frame;
+    tree.resources = Collections.emptyList();
+    tree.childFrames = null;
+    return tree;
+  }
+
+  @ChromeDevtoolsMethod
+  public JsonRpcResult canScreencast(JsonRpcPeer peer, JSONObject params) {
+    // Live preview is intentionally unsupported: JPEG encode every 200ms
+    // races Compose / hardware bitmaps and is not a Lumen product surface.
+    return new SimpleBooleanResult(false);
+  }
+
+  @ChromeDevtoolsMethod
+  public JsonRpcResult hasTouchInputs(JsonRpcPeer peer, JSONObject params) {
+    return new SimpleBooleanResult(false);
+  }
+
+  @ChromeDevtoolsMethod
+  public void setDeviceMetricsOverride(JsonRpcPeer peer, JSONObject params) {
+  }
+
+  @ChromeDevtoolsMethod
+  public void clearDeviceOrientationOverride(JsonRpcPeer peer, JSONObject params) {
+  }
+
+  @ChromeDevtoolsMethod
+  public void startScreencast(JsonRpcPeer peer, JSONObject params) {
+    // Not wired. Leave ScreencastDispatcher in tree; do not start capture.
+  }
+
+  @ChromeDevtoolsMethod
+  public void stopScreencast(JsonRpcPeer peer, JSONObject params) {
+    if (mScreencastDispatcher != null) {
+      mScreencastDispatcher.stopScreencast();
+      mScreencastDispatcher = null;
+    }
+  }
+
+  @ChromeDevtoolsMethod
+  public void screencastFrameAck(JsonRpcPeer peer, JSONObject params) {
+    // Nothing to do here, just need to make sure Chrome doesn't get an error that this method
+    // isn't implemented
+  }
+
+  @ChromeDevtoolsMethod
+  public void clearGeolocationOverride(JsonRpcPeer peer, JSONObject params) {
+  }
+
+  @ChromeDevtoolsMethod
+  public void setTouchEmulationEnabled(JsonRpcPeer peer, JSONObject params) {
+  }
+
+  @ChromeDevtoolsMethod
+  public void setEmulatedMedia(JsonRpcPeer peer, JSONObject params) {
+  }
+
+  @ChromeDevtoolsMethod
+  public void setShowViewportSizeOnResize(JsonRpcPeer peer, JSONObject params) {
+  }
+
+  /**
+   * Modern Chrome DevTools frontends call this on every session start to
+   * populate the back/forward navigation buttons. Lumen doesn't model a
+   * navigation stack, so we return a single synthetic entry pointing at
+   * ourselves — enough to keep the frontend's init path moving.
+   */
+  @ChromeDevtoolsMethod
+  public JsonRpcResult getNavigationHistory(JsonRpcPeer peer, JSONObject params) {
+    NavigationHistoryEntry entry = new NavigationHistoryEntry();
+    entry.id = 0;
+    entry.url = "lumen://" + ProcessUtil.getProcessName();
+    entry.userTypedURL = entry.url;
+    entry.title = ProcessUtil.getProcessName();
+    entry.transitionType = "typed";
+    GetNavigationHistoryResponse result = new GetNavigationHistoryResponse();
+    result.currentIndex = 0;
+    result.entries = Collections.singletonList(entry);
+    return result;
+  }
+
+  /**
+   * Frontends register init-time scripts here; we acknowledge with a synthetic
+   * identifier but never run anything (there's no JS context to run in).
+   */
+  @ChromeDevtoolsMethod
+  public JsonRpcResult addScriptToEvaluateOnNewDocument(JsonRpcPeer peer, JSONObject params) {
+    AddScriptResponse result = new AddScriptResponse();
+    result.identifier = "lumen-noop-script";
+    return result;
+  }
+
+  @ChromeDevtoolsMethod
+  public void removeScriptToEvaluateOnNewDocument(JsonRpcPeer peer, JSONObject params) {
+  }
+
+  @ChromeDevtoolsMethod
+  public void setAdBlockingEnabled(JsonRpcPeer peer, JSONObject params) {
+  }
+
+  private static class GetResourceTreeParams implements JsonRpcResult {
+    @JsonProperty(required = true)
+    public FrameResourceTree frameTree;
+  }
+
+  private static class FrameResourceTree {
+    @JsonProperty(required = true)
+    public Frame frame;
+
+    @JsonProperty
+    public List<FrameResourceTree> childFrames;
+
+    @JsonProperty(required = true)
+    public List<Resource> resources;
+  }
+
+  private static class Frame {
+    @JsonProperty(required = true)
+    public String id;
+
+    @JsonProperty
+    public String parentId;
+
+    @JsonProperty(required = true)
+    public String loaderId;
+
+    @JsonProperty
+    public String name;
+
+    @JsonProperty(required = true)
+    public String url;
+
+    @JsonProperty(required = true)
+    public String securityOrigin;
+
+    @JsonProperty(required = true)
+    public String mimeType;
+  }
+
+  private static class Resource {
+    // Incomplete...
+  }
+
+  public enum ResourceType {
+    DOCUMENT("Document"),
+    STYLESHEET("Stylesheet"),
+    IMAGE("Image"),
+    FONT("Font"),
+    SCRIPT("Script"),
+    XHR("XHR"),
+    WEBSOCKET("WebSocket"),
+    OTHER("Other");
+
+    private final String mProtocolValue;
+
+    private ResourceType(String protocolValue) {
+      mProtocolValue = protocolValue;
+    }
+
+    @JsonValue
+    public String getProtocolValue() {
+      return mProtocolValue;
+    }
+  }
+
+  private static class ExecutionContextCreatedParams {
+    @JsonProperty(required = true)
+    public ExecutionContextDescription context;
+  }
+
+  private static class ExecutionContextDescription {
+    @JsonProperty(required = true)
+    public String frameId;
+
+    @JsonProperty(required = true)
+    public int id;
+  }
+
+  public static class ScreencastFrameEvent {
+    @JsonProperty(required = true)
+    public String data;
+
+    @JsonProperty(required = true)
+    public ScreencastFrameEventMetadata metadata;
+  }
+
+  public static class ScreencastFrameEventMetadata {
+    @JsonProperty(required = true)
+    public int pageScaleFactor;
+    @JsonProperty(required = true)
+    public int offsetTop;
+    @JsonProperty(required = true)
+    public int deviceWidth;
+    @JsonProperty(required = true)
+    public int deviceHeight;
+    @JsonProperty(required = true)
+    public int scrollOffsetX;
+    @JsonProperty(required = true)
+    public int scrollOffsetY;
+  }
+
+  public static class StartScreencastRequest {
+    @JsonProperty
+    public String format;
+    @JsonProperty
+    public int quality;
+    @JsonProperty
+    public int maxWidth;
+    @JsonProperty
+    public int maxHeight;
+  }
+
+  private static class NavigationHistoryEntry {
+    @JsonProperty(required = true) public int id;
+    @JsonProperty(required = true) public String url;
+    @JsonProperty(required = true) public String userTypedURL;
+    @JsonProperty(required = true) public String title;
+    @JsonProperty(required = true) public String transitionType;
+  }
+
+  private static class GetNavigationHistoryResponse implements JsonRpcResult {
+    @JsonProperty(required = true) public int currentIndex;
+    @JsonProperty(required = true) public List<NavigationHistoryEntry> entries;
+  }
+
+  private static class AddScriptResponse implements JsonRpcResult {
+    @JsonProperty(required = true) public String identifier;
+  }
+}

@@ -1,128 +1,182 @@
-# Stetho [![Build Status](https://travis-ci.org/facebook/stetho.svg?branch=master)](https://travis-ci.org/facebook/stetho)
+# Lumen
 
-[Stetho](https://facebook.github.io/stetho) is a sophisticated debug bridge for Android applications. When enabled,
-developers have access to the Chrome Developer Tools feature natively part of
-the Chrome desktop browser. Developers can also choose to enable the optional
-`dumpapp` tool which offers a powerful command-line interface to application
-internals.
+**Lumen** is an Android **debug-only** agent. The UI is Chrome DevTools (`chrome://inspect`), not a desktop app.
 
-Once you complete the set-up instructions below, just start your app and point
-your laptop browser to `chrome://inspect`.  Click the "Inspect" button to
-begin.
+The debug process records OkHttp traffic and logcat from **process start**. Attach later and Network / Console still show that process’s history.
 
-## Set-up
+It started as a Facebook Stetho fork. New work lives in `lumen-*`. You do not call `Lumen.initialize` / `Stetho.initialize`.
 
-### Download
-Download [the latest JARs](https://github.com/facebook/stetho/releases/latest) or grab via Gradle:
-```groovy
-implementation 'com.facebook.stetho:stetho:1.6.0'
-```
-or Maven:
-```xml
-<dependency>
-  <groupId>com.facebook.stetho</groupId>
-  <artifactId>stetho</artifactId>
-  <version>1.6.0</version>
-</dependency>
-```
+| | Stetho | Lumen |
+|---|---|---|
+| When capture starts | After DevTools connects | From process start (EventStore) |
+| Wiring | Manual `initialize` + interceptor | Gradle plugin + ContentProvider + ASM |
+| Network mock | Observe only | Chrome Fetch / Local Overrides + `assets/lumen-mocks` |
+| Console | Live only | 7-day logcat archive, paged |
 
-Only the main `stetho` dependency is strictly required; however, you may also wish to use one of the network helpers:
+Current version: **0.1.0**.
 
-```groovy
-implementation 'com.facebook.stetho:stetho-okhttp3:1.6.0'
-```
-or:
-```groovy
-implementation 'com.facebook.stetho:stetho-urlconnection:1.6.0'
-```
+## Requirements
 
-You can also enable a JavaScript console with:
+- Android Gradle Plugin 8.9+ / Gradle 8.14+
+- JDK 17, `minSdk` 24, OkHttp 4.x (`okhttp3.OkHttpClient`; 3.x hosts are untested — recording largely shares the same ABI, but the mock/fulfill path uses 4.x-only APIs)
+- USB debugging, desktop Chrome, `chrome://inspect/#devices`
 
-```groovy
-implementation 'com.facebook.stetho:stetho-js-rhino:1.6.0'
-```
-For more details on how to customize the JavaScript runtime see [stetho-js-rhino](stetho-js-rhino/).
+## Add to an app
 
-### Putting it together
-Integrating with Stetho is intended to be seamless and straightforward for
-most existing Android applications.  There is a simple initialization step
-which occurs in your `Application` class:
+Do **not** add `implementation("dev.lumen:…")` or a custom Maven URL. Apply the plugin:
 
-```java
-public class MyApplication extends Application {
-  public void onCreate() {
-    super.onCreate();
-    Stetho.initializeWithDefaults(this);
-  }
+```kotlin
+plugins {
+  id("com.android.application")
+  id("dev.lumen") version "0.1.0"
+}
+
+// optional — Groovy can assign (`retentionDays = 7`)
+lumen {
+  retentionDays.set(7)
+  debugFab.set(true)
+  debugLogs.set(false)
 }
 ```
-Also ensure that your `MyApplication` Java class is registered in your `AndroidManifest.xml` file, otherwise you will not see an "Inspect" button in `chrome://inspect/#devices` :
 
-```xml
-<manifest
-        xmlns:android="http://schemas.android.com/apk/res/android"
-        ...>
-        <application
-                android:name="MyApplication"
-                ...>
-         </application>
-</manifest>                
+Multi-module: `id("dev.lumen") version "0.1.0" apply false` on the root `plugins {}` block, then `id("dev.lumen")` on the app module.
+
+The plugin adds `io.github.lxp-git:lumen-okhttp` (and `lumen-runtime`) only to **debuggable** variants, weaves `OkHttpClient.Builder.build()` / `newWebSocket`, and merges the init ContentProviders into the debug manifest.
+
+Release stays clean unless you set `debugOnly.set(false)`, mark the release type `debuggable true`, or add the libraries yourself.
+
+`id("dev.lumen")` 0.1.0 is on the Gradle Plugin Portal pending first-time approval (usually a few days). After that, stock `gradlePluginPortal()` + `mavenCentral()` is enough.
+
+## Use it
+
+1. Install a **debug** APK and launch the app.
+2. Chrome → `chrome://inspect/#devices` → inspect the process (`lumen://<package>`).
+3. Network, Console, Elements, Application work as in a web inspect session.
+
+Traffic and logcat from **before** inspect are replayed for this process (about 200 HTTP rows; WebSocket frames up to the per-socket cap).
+
+If you **force-stop or kill** the app, close that DevTools window and inspect again after the process is back. Chrome’s in-window **Reconnect** reloads an empty frontend. The agent cannot hold Chrome’s session after the process is gone.
+
+Chrome Console keeps one page. Flip logcat pages with the in-app **Log pages** control, the notification, or:
+
+```bash
+./scripts/lumen-logs                  # list (* = active)
+./scripts/lumen-logs live
+./scripts/lumen-logs seg-3
+# or:
+adb shell content call --uri content://<pkg>.lumen-adb --method listLogSegments
+adb shell am start -n <pkg>/dev.lumen.ui.LumenLogSegmentsActivity
 ```
 
-This brings up most of the default configuration but does not enable some
-additional hooks (most notably, network inspection).  See below for specific
-details on individual subsystems.
+`LUMEN_PACKAGE` defaults to `dev.lumen.sample`. Use `ANDROID_SERIAL` / `LUMEN_USER` on multi-device or work-profile phones.
 
-### Enable network inspection
-If you are using the popular [OkHttp](https://github.com/square/okhttp)
-library at the 3.x release, you can use the
-[Interceptors](https://github.com/square/okhttp/wiki/Interceptors) system to
-automatically hook into your existing stack.  This is currently the simplest
-and most straightforward way to enable network inspection:
+## What v1 covers
 
-```java
-new OkHttpClient.Builder()
-    .addNetworkInterceptor(new StethoInterceptor())
-    .build()
+**Logcat** — written under `filesDir/lumen/logs/`, default 7-day retention, replayed into Console one page at a time. Lumen’s own tags (`LumenCDP`, `LumenWS`, `lumen`, …) stay out of logcat unless `debugLogs.set(true)`.
+
+**Network** — OkHttp requests/responses go to `filesDir/lumen/network/`. `Network.enable` replays the **current process**. Older processes stay in `session-*.jsonl` and come out via HAR export, not mixed into the live panel.
+
+**WebSocket** — OkHttp `newWebSocket` (including Socket.IO with `transports=websocket`). Frames are archived and replayed on late attach. Default 2500 frames/socket, 16 384 chars/frame. Over the cap, Engine.IO ping/pong (`2` / `3`) are evicted first. Live Messages are not filtered.
+
+**Mock**
+
+- Chrome Network → Local Overrides / Fetch (CDP `Fetch.*`)
+- `src/debug/assets/lumen-mocks/*.json` (or `src/main/assets/…` on a debug-only sample):
+
+```json
+{
+  "urlContains": "httpbin.org/uuid",
+  "status": 200,
+  "headers": { "Content-Type": "application/json" },
+  "body": "{\"mock\":true}"
+}
 ```
 
-Note that okhttp 2.x will work as well, but with slightly different syntax and you must use the `stetho-okhttp` artifact (not `stetho-okhttp3`).
+`urlGlob`, `method`, and `delayMs` are also accepted. Rules apply without DevTools attached.
 
-As interceptors can modify the request and response, add the Stetho interceptor after all others to get an accurate view of the network traffic.
+**Export** — HAR and a log bundle from the notification / FAB. `exportHar` can target a past `session-*`. Files land in the app’s private files dir (the toast / `Lumen.exportHar` result shows the full path); on a debug build fetch them with:
 
-If you are using `HttpURLConnection`, you can use `StethoURLConnectionManager`
-to assist with integration though you should be aware that there are some
-caveats with this approach.  In particular, you must explicitly add
-`Accept-Encoding: gzip` to the request headers and manually handle compressed
-responses in order for Stetho to report compressed payload sizes.
-
-See the [`stetho-sample` project](stetho-sample) for more details.
-
-## Going further
-
-### Custom dumpapp plugins
-Custom plugins are the preferred means of extending the `dumpapp` system and
-can be added easily during configuration.  Simply replace your configuration
-step as such:
-
-```java
-Stetho.initialize(Stetho.newInitializerBuilder(context)
-    .enableDumpapp(new DumperPluginsProvider() {
-      @Override
-      public Iterable<DumperPlugin> get() {
-        return new Stetho.DefaultDumperPluginsBuilder(context)
-            .provide(new MyDumperPlugin())
-            .finish();
-      }
-    })
-    .enableWebKitInspector(Stetho.defaultInspectorModulesProvider(context))
-    .build())
+```bash
+adb exec-out run-as <pkg> cat files/lumen/network/export-….har > export.har
 ```
 
-See the [`stetho-sample` project](stetho-sample) for more details.
+**Custom CDP** (`Lumen.*`) — `getStatus`, log segments, `listNetworkSessions`, `exportHar`, `exportLogs`, mock-rule add/list/remove. Stock Chrome panels do not call these.
 
-## Improve Stetho!
-See the [CONTRIBUTING.md](CONTRIBUTING.md) file for how to help out.
+Only **OkHttp** is woven. HttpURLConnection, Cronet, and Socket.IO still on HTTP polling do not show as first-class Network / WebSocket rows.
+
+## What v1 does not do
+
+| Topic | What happens |
+|---|---|
+| DevTools **Reconnect** after the process dies | Close the window, wait for the process, inspect again |
+| Network panel **Clear** | Same as inspecting a web page: cleared rows (including a still-open socket) do not come back. New HTTP / a **new** WebSocket will. On-disk archive is unchanged |
+| Messages looks like one row overwritten by `3` | Short grid + autoscroll to the latest Engine.IO pong. Scroll up for history |
+| Page screencast | `Page.startScreencast` is a no-op |
+| Chrome extension | Not shipped |
+| Non-OkHttp stacks | Not captured |
+| Release / non-debuggable variants | Not packaged (default `debugOnly`) |
+
+## `lumen { }`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | Master switch |
+| `debugOnly` | `true` | Only `debuggable` variants |
+| `injectOkHttp` | `true` | ASM-weave OkHttp |
+| `retentionDays` | `7` | Log + network file retention |
+| `logPageSize` | `1000` | Console replay page |
+| `networkBodyQuotaMb` | `512` | Soft cap on stored bodies |
+| `wsMaxFrames` | `2500` | Archived frames per socket |
+| `wsMaxFrameChars` | `16384` | Max stored chars per frame |
+| `mockEnabled` | `true` | Fetch + asset mocks |
+| `debugFab` | `true` | In-app / notification picker |
+| `debugLogs` | `false` | Agent diagnostics in logcat |
+
+## Sample
+
+```bash
+export ANDROID_HOME=…
+./gradlew :lumen-sample:assembleDebug
+```
+
+APK: `lumen-sample/build/outputs/apk/debug/lumen-sample-debug.apk`
+
+1. Install and launch — status reads `Lumen agent started=true`.
+2. Fire HTTP / spam logcat / open the echo WebSocket **before** Chrome.
+3. Inspect — Network and Console show that history.
+4. **Request mock target URL** — body comes from `assets/lumen-mocks/uuid.json`.
+5. Notification **Export HAR** → `adb pull` → Chrome → Import HAR.
+
+The sample Application class has no Lumen calls.
+
+## Modules
+
+| Module | Role |
+|---|---|
+| `lumen-gradle-plugin` | `id("dev.lumen")` — debug deps, generated `lumen_*` resources, ASM |
+| `lumen-runtime` | Agent, EventStore, CDP (`lumen_<process>[_<userId>]_devtools_remote`) |
+| `lumen-okhttp` | Interceptor + WebSocket wrap (`api` → runtime) |
+| `lumen-sample` | Zero-glue demo |
+| `stetho` / `stetho-okhttp3` | Legacy coordinates for existing `includeBuild` consumers |
+
+Java/Kotlin package: `dev.lumen.*` · Maven: `io.github.lxp-git:lumen-*` · plugin id: `dev.lumen`
+
+## Legacy Stetho
+
+`:stetho` and `:stetho-okhttp3` stay so older `includeBuild` hosts keep compiling. New work goes in `lumen-*` only.
+
+## Publishing
+
+Plugin → Gradle Plugin Portal (`id("dev.lumen")`). Libraries → Maven Central (`io.github.lxp-git:lumen-okhttp` / `lumen-runtime`). Credentials stay in `~/.gradle/gradle.properties`, not in git.
+
+```bash
+export ANDROID_HOME=…
+./gradlew :lumen-runtime:publishAndReleaseToMavenCentral \
+          :lumen-okhttp:publishAndReleaseToMavenCentral \
+          --no-configuration-cache
+./gradlew -p lumen-gradle-plugin publishPlugins
+```
 
 ## License
-Stetho is MIT-licensed. See LICENSE file for more details.
+
+MIT (same as upstream Stetho).

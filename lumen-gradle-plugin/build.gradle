@@ -1,0 +1,122 @@
+plugins {
+    id 'com.gradle.plugin-publish' version '2.1.1'
+    id 'org.jetbrains.kotlin.jvm' version '2.1.20'
+}
+
+def parentProps = new Properties()
+def parentFile = file('../gradle.properties')
+if (parentFile.exists()) {
+    parentFile.withInputStream { parentProps.load(it) }
+}
+
+// Plugin Portal requires plugin id and group to share a namespace.
+group = 'dev.lumen'
+version = parentProps.getProperty('LUMEN_VERSION', findProperty('version') ?: '0.1.0')
+def lumenMavenGroup = parentProps.getProperty('LUMEN_MAVEN_GROUP', 'io.github.lxp-git')
+
+repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+dependencies {
+    compileOnly gradleApi()
+    compileOnly 'com.android.tools.build:gradle-api:8.9.1'
+    implementation 'org.ow2.asm:asm-commons:9.7.1'
+}
+
+def generatedVersionDir = layout.buildDirectory.dir('generated/lumen-version')
+def generateVersion = tasks.register('generateLumenPluginVersion') {
+    def ver = provider { project.version.toString() }
+    inputs.property('lumenVersion', ver)
+    inputs.property('lumenMavenGroup', lumenMavenGroup)
+    outputs.dir(generatedVersionDir)
+    doLast {
+        def f = generatedVersionDir.get().file('dev/lumen/gradle/LumenPluginVersion.kt').asFile
+        f.parentFile.mkdirs()
+        f.text = """package dev.lumen.gradle
+
+/** Stamped at publish time so the plugin pulls matching AARs. */
+internal object LumenPluginVersion {
+  const val VALUE = "${ver.get()}"
+  const val MAVEN_GROUP = "${lumenMavenGroup}"
+}
+"""
+    }
+}
+
+sourceSets.main.kotlin.srcDir(generatedVersionDir)
+tasks.named('compileKotlin') { dependsOn(generateVersion) }
+tasks.matching { it.name == 'sourcesJar' }.configureEach { dependsOn(generateVersion) }
+
+gradlePlugin {
+    website = 'https://github.com/lxp-git/stetho'
+    vcsUrl = 'https://github.com/lxp-git/stetho.git'
+    plugins {
+        lumen {
+            id = 'dev.lumen'
+            displayName = 'Lumen'
+            description = 'Android debug-only agent whose UI is Chrome DevTools (chrome://inspect). Records OkHttp and logcat from process start.'
+            tags.set(['android', 'debug', 'devtools', 'okhttp', 'stetho'])
+            implementationClass = 'dev.lumen.gradle.LumenPlugin'
+            compatibility {
+                features {
+                    configurationCache = false
+                }
+            }
+        }
+    }
+}
+
+def lumenRepoDir = {
+    def override = findProperty('lumenMavenRepo')
+    if (override) {
+        return file(override.toString())
+    }
+    return file('../build/maven-repo')
+}()
+
+publishing {
+    publications.withType(MavenPublication).configureEach { pub ->
+        pom {
+            name = 'Lumen Gradle Plugin'
+            description = 'Applies Lumen to debuggable Android variants (OkHttp weave + agent)'
+            url = 'https://github.com/lxp-git/stetho'
+            licenses {
+                license {
+                    name = 'MIT License'
+                    url = 'https://github.com/lxp-git/stetho/blob/main/LICENSE'
+                }
+            }
+            scm {
+                url = 'https://github.com/lxp-git/stetho'
+                connection = 'scm:git:https://github.com/lxp-git/stetho.git'
+                developerConnection = 'scm:git:ssh://git@github.com/lxp-git/stetho.git'
+            }
+            developers {
+                developer {
+                    id = 'lxp-git'
+                    name = 'Lumen'
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'Lumen'
+            url = lumenRepoDir
+        }
+    }
+}

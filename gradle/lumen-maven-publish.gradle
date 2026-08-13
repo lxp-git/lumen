@@ -1,0 +1,47 @@
+// Maven Central publication for :lumen-runtime and :lumen-okhttp.
+// Credentials live in ~/.gradle/gradle.properties (mavenCentralUsername / Password + signing*).
+//
+//   ./gradlew :lumen-runtime:publishAndReleaseToMavenCentral \
+//             :lumen-okhttp:publishAndReleaseToMavenCentral \
+//             --no-configuration-cache
+
+apply plugin: 'com.vanniktech.maven.publish'
+
+group = rootProject.ext.lumenMavenGroup
+version = rootProject.ext.lumenVersion
+
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+    coordinates(rootProject.ext.lumenMavenGroup, project.name, rootProject.ext.lumenVersion.toString())
+    pom {
+        name = project.name
+        description = 'Lumen Android debug agent (Chrome DevTools)'
+        inceptionYear = '2026'
+        url = 'https://github.com/lxp-git/stetho'
+        licenses {
+            license {
+                name = 'MIT License'
+                url = 'https://github.com/lxp-git/stetho/blob/main/LICENSE'
+                distribution = 'repo'
+            }
+        }
+        developers {
+            developer {
+                id = 'lxp-git'
+                name = 'Xuanping'
+                url = 'https://github.com/lxp-git'
+            }
+        }
+        scm {
+            url = 'https://github.com/lxp-git/stetho'
+            connection = 'scm:git:https://github.com/lxp-git/stetho.git'
+            developerConnection = 'scm:git:ssh://git@github.com/lxp-git/stetho.git'
+        }
+    }
+}
+
+// GnuPG 2.4 keyring is not a BC secring; sign with the gpg binary.
+signing {
+    useGpgCmd()
+}

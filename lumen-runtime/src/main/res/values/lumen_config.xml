@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Defaults. The Gradle plugin overrides these in the host app. -->
+    <integer name="lumen_retention_days">7</integer>
+    <integer name="lumen_log_page_size">1000</integer>
+    <integer name="lumen_network_body_quota_mb">512</integer>
+    <integer name="lumen_ws_max_frames">2500</integer>
+    <integer name="lumen_ws_max_frame_chars">16384</integer>
+    <bool name="lumen_mock_enabled">true</bool>
+    <bool name="lumen_debug_fab">true</bool>
+</resources>

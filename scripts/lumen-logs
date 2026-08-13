@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Flip Lumen's 7-day logcat pages without Chrome and without in-app UI.
+#
+#   ./scripts/lumen-logs                 # list segments (* = active)
+#   ./scripts/lumen-logs live
+#   ./scripts/lumen-logs seg-3
+#
+# Env: ANDROID_SERIAL, LUMEN_PACKAGE (default dev.lumen.sample), LUMEN_USER
+set -euo pipefail
+
+ADB="${ADB:-adb}"
+if ! command -v "$ADB" >/dev/null 2>&1 && [[ -n "${ANDROID_HOME:-}" ]]; then
+  ADB="$ANDROID_HOME/platform-tools/adb"
+fi
+
+PKG="${LUMEN_PACKAGE:-dev.lumen.sample}"
+AUTH="content://${PKG}.lumen-adb"
+CMD=("$ADB")
+[[ -n "${ANDROID_SERIAL:-}" ]] && CMD+=(-s "$ANDROID_SERIAL")
+USER_ARGS=()
+if [[ -n "${LUMEN_USER:-}" ]]; then
+  USER_ARGS+=(--user "$LUMEN_USER")
+fi
+
+what="${1:-list}"
+if [[ "$what" == "list" || "$what" == "-l" ]]; then
+  "${CMD[@]}" shell content call "${USER_ARGS[@]}" --uri "$AUTH" --method listLogSegments
+else
+  "${CMD[@]}" shell content call "${USER_ARGS[@]}" --uri "$AUTH" \
+    --method setActiveLogSegment --arg "$what"
+fi

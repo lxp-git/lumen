@@ -1,4 +1,5 @@
 apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'maven-publish'
 
 android {
@@ -6,7 +7,6 @@ android {
     compileSdkVersion rootProject.ext.compileSdkVersion
 
     defaultConfig {
-        // Raised from 14 to match the consumer (emochi-android minSdk = 24).
         minSdkVersion 24
         targetSdkVersion rootProject.ext.targetSdkVersion
         consumerProguardFiles 'proguard-consumer.pro'
@@ -15,6 +15,10 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
     }
 
     lintOptions {

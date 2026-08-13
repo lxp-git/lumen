@@ -1,0 +1,9 @@
+{
+  "urlContains": "httpbin.org/uuid",
+  "status": 200,
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Lumen-Mock": "asset-rule"
+  },
+  "body": "{\"mock\":true,\"source\":\"assets/lumen-mocks\",\"message\":\"local rule hit without DevTools\"}"
+}

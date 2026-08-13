@@ -1,7 +1,14 @@
-// Slimmed for the emochi-cdp-modernization fork: we only ship :stetho and
-// :stetho-okhttp3 since that's what emochi-android consumes, and bringing
-// in the rest (stetho-sample, stetho-js-rhino, stetho-timber, …) drags
-// along jcenter-only dependencies and Rhino which neither the fork nor
-// the host app needs.
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    includeBuild('lumen-gradle-plugin')
+}
+
+include ':lumen-runtime'
+include ':lumen-okhttp'
+include ':lumen-sample'
 include ':stetho'
 include ':stetho-okhttp3'

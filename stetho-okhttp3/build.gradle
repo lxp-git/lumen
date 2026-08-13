@@ -29,8 +29,6 @@ android {
 dependencies {
     implementation project(':stetho')
     implementation 'com.google.code.findbugs:jsr305:3.0.2'
-    // OkHttp 4.x is wire-compatible with the 3.x API stetho-okhttp3 was
-    // originally built against and matches emochi-android's runtime version.
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }
 

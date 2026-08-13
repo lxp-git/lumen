@@ -382,6 +382,8 @@ public class Stetho {
       provideIfDesired(new DOMStorage(mContext));
       provideIfDesired(new HeapProfiler());
       provideIfDesired(new Inspector());
+      // Fully qualified to avoid colliding with android.util.Log.
+      provideIfDesired(new com.facebook.stetho.inspector.protocol.module.Log(mContext));
       provideIfDesired(new Network(mContext));
       provideIfDesired(new Page(mContext));
       provideIfDesired(new Profiler());

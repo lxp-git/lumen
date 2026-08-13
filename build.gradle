@@ -4,10 +4,9 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        // Aligned with the emochi-android consumer (AGP 8.9.1 / Gradle 8.14)
-        // so the fork can be plugged in via `includeBuild` without forcing a
-        // second toolchain into the host project.
         classpath 'com.android.tools.build:gradle:8.9.1'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20'
+        classpath 'com.vanniktech:gradle-maven-publish-plugin:0.34.0'
     }
 }
 
@@ -21,4 +20,9 @@ allprojects {
 ext {
     compileSdkVersion = 36
     targetSdkVersion = 36
+    minSdkVersion = 24
+    okhttpVersion = '4.12.0'
+    lumenGroup = LUMEN_GROUP
+    lumenMavenGroup = LUMEN_MAVEN_GROUP
+    lumenVersion = LUMEN_VERSION
 }

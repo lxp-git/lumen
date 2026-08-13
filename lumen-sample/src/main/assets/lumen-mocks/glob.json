@@ -1,0 +1,11 @@
+{
+  "urlGlob": "*httpbin.org/anything*",
+  "method": "GET",
+  "status": 200,
+  "delayMs": 150,
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Lumen-Mock": "glob-rule"
+  },
+  "body": "{\"mock\":true,\"match\":\"urlGlob\",\"message\":\"glob + delay hit without DevTools\"}"
+}

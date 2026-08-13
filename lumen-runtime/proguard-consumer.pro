@@ -1,0 +1,2 @@
+-keep class dev.lumen.** { *; }
+-dontwarn dev.lumen.**

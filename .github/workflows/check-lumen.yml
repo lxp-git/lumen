@@ -1,0 +1,24 @@
+name: check-lumen
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  assemble-sample:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Assemble debug sample
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        run: ./gradlew --no-daemon :lumen-sample:assembleDebug

@@ -1,6 +1,15 @@
 .gradle
+**/build/
 /local.properties
 /.idea
 *.iml
 .DS_Store
 /build
+*.asc
+secring.gpg
+
+# Not v1 — keep off the remote
+/lumen-chrome-extension/
+/scripts/lumen-proxy.sh
+/scripts/lumen-forward.sh
+/scripts/push-lumen-maven.sh
