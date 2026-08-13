@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>dev.lumen</groupId>
+  <artifactId>dev.lumen.gradle.plugin</artifactId>
+  <version>0.1.0</version>
+  <packaging>pom</packaging>
+  <name>Lumen Gradle Plugin</name>
+  <description>Applies Lumen to debuggable Android variants (OkHttp weave + agent)</description>
+  <url>https://github.com/lxp-git/stetho</url>
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://github.com/lxp-git/stetho/blob/main/LICENSE</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>lxp-git</id>
+      <name>Lumen</name>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:https://github.com/lxp-git/stetho.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/lxp-git/stetho.git</developerConnection>
+    <url>https://github.com/lxp-git/stetho</url>
+  </scm>
+  <dependencies>
+    <dependency>
+      <groupId>dev.lumen</groupId>
+      <artifactId>lumen-gradle-plugin</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+  </dependencies>
+</project>

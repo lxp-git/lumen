@@ -1,0 +1,138 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "dev.lumen",
+    "module": "lumen-runtime",
+    "version": "0.1.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.14.3"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.1.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "lumen-runtime-0.1.0.aar",
+          "url": "lumen-runtime-0.1.0.aar",
+          "size": 654551,
+          "sha512": "5e42db0dee7c8c17c2087b109aefeffac4fd3b591442d040a404f2d48427daa6d66df11bd243a1e38693987fd0077bfbedda7879e0401fe00e88ad058fa8465f",
+          "sha256": "7cfe14ad57bf7822a6387dadf16cd1503a1059acd1e2f482e3574053cee4ebae",
+          "sha1": "b7c997b0b3e87a3c7da8c90975a4dec1a774960e",
+          "md5": "1a5e7e60da41689024af6c153bea4db4"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "commons-cli",
+          "module": "commons-cli",
+          "version": {
+            "requires": "1.2"
+          }
+        },
+        {
+          "group": "com.google.code.findbugs",
+          "module": "jsr305",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "androidx.annotation",
+          "module": "annotation",
+          "version": {
+            "requires": "1.7.1"
+          }
+        },
+        {
+          "group": "androidx.appcompat",
+          "module": "appcompat",
+          "version": {
+            "requires": "1.6.1"
+          }
+        },
+        {
+          "group": "androidx.core",
+          "module": "core-ktx",
+          "version": {
+            "requires": "1.13.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlinx",
+          "module": "kotlinx-coroutines-android",
+          "version": {
+            "requires": "1.8.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.1.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "lumen-runtime-0.1.0.aar",
+          "url": "lumen-runtime-0.1.0.aar",
+          "size": 654551,
+          "sha512": "5e42db0dee7c8c17c2087b109aefeffac4fd3b591442d040a404f2d48427daa6d66df11bd243a1e38693987fd0077bfbedda7879e0401fe00e88ad058fa8465f",
+          "sha256": "7cfe14ad57bf7822a6387dadf16cd1503a1059acd1e2f482e3574053cee4ebae",
+          "sha1": "b7c997b0b3e87a3c7da8c90975a4dec1a774960e",
+          "md5": "1a5e7e60da41689024af6c153bea4db4"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "lumen-runtime-0.1.0-sources.jar",
+          "url": "lumen-runtime-0.1.0-sources.jar",
+          "size": 291251,
+          "sha512": "1fe1e8c39b8de20075c218ab8244c700fd4ec222c463f3dec391f19ee36402131899d5cdc6232ff786f07eac71e71b98969b34c8c14cd497cafb0d40d4ea1895",
+          "sha256": "8cfabd926421228e641a51009bdfaf456955b46f3bae2c0694829f9137f3f9d3",
+          "sha1": "2cb55ba06693314b22341436bfca7ded08291a16",
+          "md5": "c90d472c429636d6736657a011c290b3"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "dev.lumen",
+    "module": "lumen-gradle-plugin",
+    "version": "0.1.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.14.3"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.1.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "lumen-gradle-plugin-0.1.0.jar",
+          "url": "lumen-gradle-plugin-0.1.0.jar",
+          "size": 17080,
+          "sha512": "baae1340a79408e790860cd5de94bd7d3f4a870d76a6bac57707e4fdf5afa3b32f704280a50c3c8bcd57bced902d5d3cd0e1bc50b0c5e908ac3939a0cb18964d",
+          "sha256": "a768899aad76d3d61d4dfb49739696e2e30187d4eda731dd3dcd240ee8ec1bb9",
+          "sha1": "90161e797edb54d8545a748fee27362ff2f040e8",
+          "md5": "33dc2883bab0237223fff26866f3729e"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.environment": "standard-jvm",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime",
+        "org.jetbrains.kotlin.platform.type": "jvm"
+      },
+      "dependencies": [
+        {
+          "group": "org.ow2.asm",
+          "module": "asm-commons",
+          "version": {
+            "requires": "9.7.1"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.1.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "lumen-gradle-plugin-0.1.0.jar",
+          "url": "lumen-gradle-plugin-0.1.0.jar",
+          "size": 17080,
+          "sha512": "baae1340a79408e790860cd5de94bd7d3f4a870d76a6bac57707e4fdf5afa3b32f704280a50c3c8bcd57bced902d5d3cd0e1bc50b0c5e908ac3939a0cb18964d",
+          "sha256": "a768899aad76d3d61d4dfb49739696e2e30187d4eda731dd3dcd240ee8ec1bb9",
+          "sha1": "90161e797edb54d8545a748fee27362ff2f040e8",
+          "md5": "33dc2883bab0237223fff26866f3729e"
+        }
+      ]
+    }
+  ]
+}

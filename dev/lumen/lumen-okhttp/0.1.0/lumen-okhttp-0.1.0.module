@@ -1,0 +1,117 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "dev.lumen",
+    "module": "lumen-okhttp",
+    "version": "0.1.0",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.14.3"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "dev.lumen",
+          "module": "lumen-runtime",
+          "version": {
+            "requires": "0.1.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.1.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "lumen-okhttp-0.1.0.aar",
+          "url": "lumen-okhttp-0.1.0.aar",
+          "size": 34656,
+          "sha512": "07011ccbc3d52b6dfdc8903a2fe0402a589bff1e78d21cbbc6119bdb3f678aea0d8fd7bd0e58cda4533d3c26af8c64278ce8f68a5b8a8d60734cdca9c42721ef",
+          "sha256": "370adb0194c411384f90283fe9dcf249d9660ef22a01053e95535fd3fd719e06",
+          "sha1": "c77cc1f30934e0c1029d362ed4fe004c77ac8ee9",
+          "md5": "95b71b7278b241d0e96471730e895b21"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "com.google.code.findbugs",
+          "module": "jsr305",
+          "version": {
+            "requires": "3.0.2"
+          }
+        },
+        {
+          "group": "dev.lumen",
+          "module": "lumen-runtime",
+          "version": {
+            "requires": "0.1.0"
+          }
+        },
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib",
+          "version": {
+            "requires": "2.1.20"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "lumen-okhttp-0.1.0.aar",
+          "url": "lumen-okhttp-0.1.0.aar",
+          "size": 34656,
+          "sha512": "07011ccbc3d52b6dfdc8903a2fe0402a589bff1e78d21cbbc6119bdb3f678aea0d8fd7bd0e58cda4533d3c26af8c64278ce8f68a5b8a8d60734cdca9c42721ef",
+          "sha256": "370adb0194c411384f90283fe9dcf249d9660ef22a01053e95535fd3fd719e06",
+          "sha1": "c77cc1f30934e0c1029d362ed4fe004c77ac8ee9",
+          "md5": "95b71b7278b241d0e96471730e895b21"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "lumen-okhttp-0.1.0-sources.jar",
+          "url": "lumen-okhttp-0.1.0-sources.jar",
+          "size": 9020,
+          "sha512": "591cd1d42cad455c6be77d0cca4ba111795c20acf7c7ece0429d2e7bf022ee5108b7ed2d25f17c76bf81c41f64e368365ceee97080033e42333b4cf8d3bd5fae",
+          "sha256": "ba14c9b8f3ca9ba228b8d9c902ad830aebc63cf673dc2eb5b8f4c04e9131334f",
+          "sha1": "1b7f0bbcb998e3421c8c6cb8ab11fe1ae4312be8",
+          "md5": "98a9c681d49edc6873a32400765653b0"
+        }
+      ]
+    }
+  ]
+}
