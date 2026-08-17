@@ -23,7 +23,7 @@ import org.objectweb.asm.commons.AdviceAdapter
  *
  * Host usage:
  * ```
- * plugins { id("dev.lumen") }
+ * plugins { id("io.github.lxp-git.lumen") }
  * ```
  */
 class LumenPlugin : Plugin<Project> {

@@ -9,10 +9,12 @@ if (parentFile.exists()) {
     parentFile.withInputStream { parentProps.load(it) }
 }
 
-// Plugin Portal requires plugin id and group to share a namespace.
-group = 'dev.lumen'
+// Plugin Portal requires plugin id and group to share a namespace we own.
+// Gradle rejected `dev.lumen` without a lumen.dev TXT record; GitHub namespace is allowed.
+group = parentProps.getProperty('LUMEN_GROUP', 'io.github.lxp-git')
 version = parentProps.getProperty('LUMEN_VERSION', findProperty('version') ?: '0.1.0')
 def lumenMavenGroup = parentProps.getProperty('LUMEN_MAVEN_GROUP', 'io.github.lxp-git')
+def lumenPluginId = parentProps.getProperty('LUMEN_PLUGIN_ID', 'io.github.lxp-git.lumen')
 
 repositories {
     google()
@@ -66,7 +68,7 @@ gradlePlugin {
     vcsUrl = 'https://github.com/lxp-git/stetho.git'
     plugins {
         lumen {
-            id = 'dev.lumen'
+            id = lumenPluginId
             displayName = 'Lumen'
             description = 'Android debug-only agent whose UI is Chrome DevTools (chrome://inspect). Records OkHttp and logcat from process start.'
             tags.set(['android', 'debug', 'devtools', 'okhttp', 'stetho'])

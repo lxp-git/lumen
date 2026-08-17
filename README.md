@@ -23,12 +23,12 @@ Current version: **0.1.0**.
 
 ## Add to an app
 
-Do **not** add `implementation("dev.lumen:…")` or a custom Maven URL. Apply the plugin:
+Do **not** add `implementation("io.github.lxp-git:…")` or a custom Maven URL. Apply the plugin:
 
 ```kotlin
 plugins {
   id("com.android.application")
-  id("dev.lumen") version "0.1.0"
+  id("io.github.lxp-git.lumen") version "0.1.0"
 }
 
 // optional — Groovy can assign (`retentionDays = 7`)
@@ -39,13 +39,13 @@ lumen {
 }
 ```
 
-Multi-module: `id("dev.lumen") version "0.1.0" apply false` on the root `plugins {}` block, then `id("dev.lumen")` on the app module.
+Multi-module: `id("io.github.lxp-git.lumen") version "0.1.0" apply false` on the root `plugins {}` block, then `id("io.github.lxp-git.lumen")` on the app module.
 
 The plugin adds `io.github.lxp-git:lumen-okhttp` (and `lumen-runtime`) only to **debuggable** variants, weaves `OkHttpClient.Builder.build()` / `newWebSocket`, and merges the init ContentProviders into the debug manifest.
 
 Release stays clean unless you set `debugOnly.set(false)`, mark the release type `debuggable true`, or add the libraries yourself.
 
-`id("dev.lumen")` 0.1.0 is on the Gradle Plugin Portal pending first-time approval (usually a few days). After that, stock `gradlePluginPortal()` + `mavenCentral()` is enough.
+`id("io.github.lxp-git.lumen")` 0.1.0 is on the Gradle Plugin Portal (first-time approval can take a few days). After that, stock `gradlePluginPortal()` + `mavenCentral()` is enough. The plugin id uses the GitHub namespace because Plugin Portal requires proof of `lumen.dev` for `dev.lumen`.
 
 ## Use it
 
@@ -153,13 +153,13 @@ The sample Application class has no Lumen calls.
 
 | Module | Role |
 |---|---|
-| `lumen-gradle-plugin` | `id("dev.lumen")` — debug deps, generated `lumen_*` resources, ASM |
+| `lumen-gradle-plugin` | `id("io.github.lxp-git.lumen")` — debug deps, generated `lumen_*` resources, ASM |
 | `lumen-runtime` | Agent, EventStore, CDP (`lumen_<process>[_<userId>]_devtools_remote`) |
 | `lumen-okhttp` | Interceptor + WebSocket wrap (`api` → runtime) |
 | `lumen-sample` | Zero-glue demo |
 | `stetho` / `stetho-okhttp3` | Legacy coordinates for existing `includeBuild` consumers |
 
-Java/Kotlin package: `dev.lumen.*` · Maven: `io.github.lxp-git:lumen-*` · plugin id: `dev.lumen`
+Java/Kotlin package: `dev.lumen.*` · Maven: `io.github.lxp-git:lumen-*` · plugin id: `io.github.lxp-git.lumen`
 
 ## Legacy Stetho
 
@@ -167,7 +167,7 @@ Java/Kotlin package: `dev.lumen.*` · Maven: `io.github.lxp-git:lumen-*` · plug
 
 ## Publishing
 
-Plugin → Gradle Plugin Portal (`id("dev.lumen")`). Libraries → Maven Central (`io.github.lxp-git:lumen-okhttp` / `lumen-runtime`). Credentials stay in `~/.gradle/gradle.properties`, not in git.
+Plugin → Gradle Plugin Portal (`id("io.github.lxp-git.lumen")`). Libraries → Maven Central (`io.github.lxp-git:lumen-okhttp` / `lumen-runtime`). Credentials stay in `~/.gradle/gradle.properties`, not in git.
 
 ```bash
 export ANDROID_HOME=…
