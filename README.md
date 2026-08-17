@@ -116,6 +116,16 @@ Only **OkHttp** is woven. HttpURLConnection, Cronet, and Socket.IO still on HTTP
 | Non-OkHttp stacks | Not captured |
 | Release / non-debuggable variants | Not packaged (default `debugOnly`) |
 
+## Roadmap
+
+Feasible with the current architecture, not built yet:
+
+- **HttpURLConnection / Cronet capture** — the EventStore + CDP replay path is transport-agnostic; only the OkHttp interceptor exists today.
+- **Live screencast** — implement `Page.startScreencast` with `PixelCopy` frames so `chrome://inspect` shows the device screen next to Network / Console.
+- **Socket.IO long-polling decode** — polling traffic already lands in HTTP rows; Engine.IO payloads could be decoded into WebSocket-style Messages like the websocket transport.
+- **Compose-aware Elements** — Elements walks the classic View tree; mapping Compose semantics nodes would make it useful on Compose-only screens.
+- **Mock rule editor in DevTools** — rules already have add/list/remove CDP methods (`Lumen.*`); a small DevTools-side panel or extension could manage them without adb.
+
 ## `lumen { }`
 
 | Key | Default | Meaning |
