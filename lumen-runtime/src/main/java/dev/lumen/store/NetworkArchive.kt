@@ -293,7 +293,7 @@ class NetworkArchive(
     return JSONObject()
       .put("log", JSONObject()
         .put("version", "1.2")
-        .put("creator", JSONObject().put("name", "Lumen").put("version", "0.1.0"))
+        .put("creator", JSONObject().put("name", "Lumen").put("version", "0.1.1"))
         .put("entries", entries))
   }
 
@@ -326,7 +326,7 @@ class NetworkArchive(
         "log",
         JSONObject()
           .put("version", "1.2")
-          .put("creator", JSONObject().put("name", "Lumen").put("version", "0.1.0"))
+          .put("creator", JSONObject().put("name", "Lumen").put("version", "0.1.1"))
           .put("comment", "Previous process session — metadata only, not injected into Network.enable")
           .put("entries", entries),
       )
