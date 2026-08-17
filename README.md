@@ -10,7 +10,7 @@ It started as a Facebook Stetho fork. New work lives in `lumen-*`. You do not ca
 |---|---|---|
 | When capture starts | After DevTools connects | From process start (EventStore) |
 | Wiring | Manual `initialize` + interceptor | Gradle plugin + ContentProvider + ASM |
-| Network mock | Observe only | Chrome Fetch / Local Overrides + `assets/lumen-mocks` |
+| Network mock | Observe only | Chrome Fetch / Local Overrides (recordable for offline replay) + `assets/lumen-mocks` |
 | Console | Live only | 7-day logcat archive, paged |
 
 Current version: **0.1.1**.
@@ -94,13 +94,15 @@ adb shell am start -n <pkg>/dev.lumen.ui.LumenLogSegmentsActivity
 
 `urlGlob`, `method`, and `delayMs` are also accepted. Rules apply without DevTools attached.
 
+**Recorded overrides** (`mockRecordOverrides.set(true)`, or `Lumen.setMockRecording` at runtime) — while DevTools is attached, every override Chrome fulfils (Local Overrides or manual `Fetch.fulfillRequest` with a body) is persisted under `filesDir/lumen/mocks/` and replayed on exact URL + method. Mocks authored in the Chrome UI keep working after DevTools disconnects and across process restarts. Off by default so an override can't silently freeze an API; inspect with `Lumen.listMockRules`, delete with `Lumen.removeMockRule` (also removes the files).
+
 **Export** — HAR and a log bundle from the notification / FAB. `exportHar` can target a past `session-*`. Files land in the app’s private files dir (the toast / `Lumen.exportHar` result shows the full path); on a debug build fetch them with:
 
 ```bash
 adb exec-out run-as <pkg> cat files/lumen/network/export-….har > export.har
 ```
 
-**Custom CDP** (`Lumen.*`) — `getStatus`, log segments, `listNetworkSessions`, `exportHar`, `exportLogs`, mock-rule add/list/remove. Stock Chrome panels do not call these.
+**Custom CDP** (`Lumen.*`) — `getStatus`, log segments, `listNetworkSessions`, `exportHar`, `exportLogs`, mock-rule add/list/remove, `setMockRecording`. Stock Chrome panels do not call these.
 
 Only **OkHttp** is woven. HttpURLConnection, Cronet, and Socket.IO still on HTTP polling do not show as first-class Network / WebSocket rows.
 
@@ -139,6 +141,7 @@ Feasible with the current architecture, not built yet:
 | `wsMaxFrames` | `2500` | Archived frames per socket |
 | `wsMaxFrameChars` | `16384` | Max stored chars per frame |
 | `mockEnabled` | `true` | Fetch + asset mocks |
+| `mockRecordOverrides` | `false` | Persist DevTools overrides for offline replay |
 | `debugFab` | `true` | In-app / notification picker |
 | `debugLogs` | `false` | Agent diagnostics in logcat |
 

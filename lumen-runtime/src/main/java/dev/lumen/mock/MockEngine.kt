@@ -4,12 +4,23 @@ import android.content.Context
 import dev.lumen.LumenConfig
 import dev.lumen.common.LogRedirector
 import org.json.JSONObject
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+
+/** Bodies above this stay out of the rule JSON and go to a sidecar file. */
+private const val MAX_INLINE_BODY_BYTES = 512 * 1024
+
+/** Overrides above this are served live but not persisted. */
+private const val MAX_RECORDED_BODY_BYTES = 5 * 1024 * 1024
 
 /**
  * Shared mock / interception engine.
@@ -31,13 +42,20 @@ class MockEngine(
     val id: String,
     val urlContains: String? = null,
     val urlGlob: String? = null,
+    /** Exact URL match — used by recorded DevTools overrides. */
+    val urlEquals: String? = null,
     val status: Int = 200,
     val headers: Map<String, String> = mapOf("Content-Type" to "application/json"),
     val body: String = "{}",
+    /** Sidecar file for binary or oversized bodies; wins over [body] when set. */
+    val bodyFile: File? = null,
     val method: String? = null,
     val delayMs: Long = 0,
     val source: String = "asset",
-  )
+  ) {
+    fun bodyBytes(): ByteArray =
+      bodyFile?.takeIf { it.exists() }?.readBytes() ?: body.toByteArray()
+  }
 
   sealed class Decision {
     data class Fulfill(
@@ -87,10 +105,16 @@ class MockEngine(
   private val streams = ConcurrentHashMap<String, ByteArray>()
   private val fetchListeners = CopyOnWriteArrayList<FetchListener>()
   private val nextFetchId = AtomicLong(1)
+  private val recordOverrides = AtomicBoolean(false)
+
+  @Volatile
+  private var recordedRulesDir: File? = null
 
   private class Pending(
     val fetchId: String,
     val networkId: String,
+    val url: String,
+    val method: String,
     val latch: CountDownLatch = CountDownLatch(1),
     @Volatile var decision: Decision? = null,
     @Volatile var responseBody: ByteArray? = null,
@@ -154,6 +178,41 @@ class MockEngine(
     }
   }
 
+  /**
+   * Point the engine at the private directory holding recorded DevTools overrides
+   * (e.g. `filesDir/lumen/mocks`) and load whatever earlier sessions persisted.
+   * Recorded rules replay through [matchLocalRule], so they keep working with no
+   * DevTools attached and across process restarts.
+   */
+  fun initRecordedRules(dir: File, recordByDefault: Boolean) {
+    recordedRulesDir = dir
+    recordOverrides.set(recordByDefault)
+    if (!dir.isDirectory) return
+    val files = dir.listFiles { f -> f.name.endsWith(".json") } ?: return
+    var loaded = 0
+    for (file in files.sortedBy { it.name }) {
+      try {
+        val json = JSONObject(file.readText())
+        val rule = parseRule(json, id = file.name.removeSuffix(".json"), source = "recorded", dir = dir)
+        localRules.add(0, rule)
+        loaded++
+      } catch (t: Throwable) {
+        LogRedirector.w(tag, "Failed to load recorded rule ${file.name}", t)
+      }
+    }
+    if (loaded > 0) {
+      LogRedirector.i(tag, "Loaded $loaded recorded mock rules")
+    }
+  }
+
+  /** Toggle capturing DevTools fulfils into persistent local rules. */
+  fun setRecordOverrides(enabled: Boolean) {
+    recordOverrides.set(enabled)
+    FetchLog.i("record overrides ${if (enabled) "enabled" else "disabled"}")
+  }
+
+  fun isRecordingOverrides(): Boolean = recordOverrides.get()
+
   fun matchLocalRule(url: String, method: String): LocalRule? {
     if (!config.mockEnabled) return null
     return localRules.firstOrNull { rule ->
@@ -187,7 +246,14 @@ class MockEngine(
     return rule
   }
 
-  fun removeRule(id: String): Boolean = localRules.removeAll { it.id == id }
+  fun removeRule(id: String): Boolean {
+    val removed = localRules.removeAll { it.id == id }
+    recordedRulesDir?.let { dir ->
+      File(dir, "$id.json").delete()
+      File(dir, "$id.body").delete()
+    }
+    return removed
+  }
 
   fun shouldPauseForFetch(url: String, stage: String = "Request"): Boolean {
     if (!isFetchEnabled()) return false
@@ -218,7 +284,13 @@ class MockEngine(
     // NetworkEventReporterImpl); resolvePending's dual lookup relies on the two
     // namespaces staying disjoint.
     val fetchId = "lumen-fetch-${nextFetchId.getAndIncrement()}"
-    val pendingWait = Pending(fetchId = fetchId, networkId = networkId, responseBody = responseBody)
+    val pendingWait = Pending(
+      fetchId = fetchId,
+      networkId = networkId,
+      url = url,
+      method = method,
+      responseBody = responseBody,
+    )
     pending[fetchId] = pendingWait
     pendingByNetworkId[networkId] = fetchId
     FetchLog.i(
@@ -289,6 +361,11 @@ class MockEngine(
       "fulfill requestId=$fetchId code=$responseCode headers=${responseHeaders.size} " +
         "body=${resolvedBody.size} usedOriginal=${body == null}",
     )
+    // An explicit body means Chrome replaced the response (Local Overrides /
+    // manual fulfil) rather than passing the original through — worth keeping.
+    if (body != null && pendingWait != null) {
+      maybeRecordOverride(pendingWait, responseCode, responseHeaders, body)
+    }
     complete(fetchId, Decision.Fulfill(responseCode, responseHeaders, resolvedBody))
   }
 
@@ -328,7 +405,7 @@ class MockEngine(
     p.latch.countDown()
   }
 
-  private fun parseRule(json: JSONObject, id: String, source: String): LocalRule {
+  private fun parseRule(json: JSONObject, id: String, source: String, dir: File? = null): LocalRule {
     val method = if (json.has("method") && !json.isNull("method") && json.getString("method").isNotEmpty()) {
       json.getString("method")
     } else {
@@ -336,25 +413,119 @@ class MockEngine(
     }
     val contains = json.optString("urlContains", "").takeIf { it.isNotEmpty() }
     val glob = json.optString("urlGlob", json.optString("urlPattern", "")).takeIf { it.isNotEmpty() }
+    val equals = json.optString("urlEquals", "").takeIf { it.isNotEmpty() }
+    val bodyFileName = json.optString("bodyFile", "").takeIf { it.isNotEmpty() }
     return LocalRule(
       id = id,
       urlContains = contains,
       urlGlob = glob,
+      urlEquals = equals,
       status = json.optInt("status", 200),
       headers = json.optJSONObject("headers")?.let { obj ->
         obj.keys().asSequence().associateWith { obj.getString(it) }
       } ?: mapOf("Content-Type" to "application/json"),
       body = json.optString("body", "{}"),
+      bodyFile = if (bodyFileName != null && dir != null) File(dir, bodyFileName) else null,
       method = method,
       delayMs = json.optLong("delayMs", 0L),
       source = source,
     )
   }
 
+  private fun maybeRecordOverride(
+    pending: Pending,
+    status: Int,
+    headers: List<Pair<String, String>>,
+    body: ByteArray,
+  ) {
+    if (!recordOverrides.get()) return
+    val dir = recordedRulesDir ?: return
+    if (body.size > MAX_RECORDED_BODY_BYTES) {
+      FetchLog.w("override for ${pending.url} is ${body.size} bytes — served but not recorded")
+      return
+    }
+    try {
+      val rule = persistRecordedRule(dir, pending.url, pending.method, status, headers, body)
+      localRules.removeAll { it.id == rule.id }
+      localRules.add(0, rule)
+      FetchLog.i("recorded override ${rule.id} ${pending.method} ${pending.url}")
+    } catch (t: Throwable) {
+      LogRedirector.w(tag, "Failed to record override for ${pending.url}", t)
+    }
+  }
+
+  private fun persistRecordedRule(
+    dir: File,
+    url: String,
+    method: String,
+    status: Int,
+    headers: List<Pair<String, String>>,
+    body: ByteArray,
+  ): LocalRule {
+    dir.mkdirs()
+    val id = "recorded-" + stableId(method, url)
+    val headerMap = LinkedHashMap<String, String>()
+    for ((name, value) in headers) {
+      // The recorded body is already decoded and possibly edited; stale
+      // Content-Encoding / Content-Length would corrupt the replayed response.
+      if (name.equals("Content-Encoding", ignoreCase = true)) continue
+      if (name.equals("Content-Length", ignoreCase = true)) continue
+      headerMap[name] = value
+    }
+    val inlineBody = decodeUtf8OrNull(body)
+    val sidecar = File(dir, "$id.body")
+    if (inlineBody == null) {
+      sidecar.writeBytes(body)
+    } else {
+      sidecar.delete()
+    }
+    val json = JSONObject()
+      .put("urlEquals", url)
+      .put("method", method)
+      .put("status", status)
+      .put("headers", JSONObject(headerMap as Map<*, *>))
+    if (inlineBody == null) {
+      json.put("bodyFile", sidecar.name)
+    } else {
+      json.put("body", inlineBody)
+    }
+    File(dir, "$id.json").writeText(json.toString(2))
+    return LocalRule(
+      id = id,
+      urlEquals = url,
+      status = status,
+      headers = headerMap,
+      body = inlineBody ?: "",
+      bodyFile = if (inlineBody == null) sidecar else null,
+      method = method,
+      source = "recorded",
+    )
+  }
+
+  private fun stableId(method: String, url: String): String {
+    val digest = MessageDigest.getInstance("SHA-1").digest("$method $url".toByteArray())
+    return digest.joinToString("") { "%02x".format(it) }.take(16)
+  }
+
+  private fun decodeUtf8OrNull(bytes: ByteArray): String? {
+    if (bytes.size > MAX_INLINE_BODY_BYTES) return null
+    return try {
+      Charsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(bytes))
+        .toString()
+    } catch (_: CharacterCodingException) {
+      null
+    }
+  }
+
   private fun methodMatches(rule: LocalRule, method: String): Boolean =
     rule.method == null || rule.method.equals(method, ignoreCase = true)
 
   private fun urlMatches(rule: LocalRule, url: String): Boolean {
+    val equals = rule.urlEquals
+    if (equals != null) return equals == url
     val glob = rule.urlGlob
     if (glob != null) return matches(glob, url)
     val contains = rule.urlContains

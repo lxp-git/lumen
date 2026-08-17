@@ -32,6 +32,9 @@ abstract class GenerateLumenConfigTask : DefaultTask() {
   abstract val mockEnabled: Property<Boolean>
 
   @get:Input
+  abstract val mockRecordOverrides: Property<Boolean>
+
+  @get:Input
   abstract val debugFab: Property<Boolean>
 
   @get:Input
@@ -54,6 +57,7 @@ abstract class GenerateLumenConfigTask : DefaultTask() {
           <integer name="lumen_ws_max_frames">${wsMaxFrames.get()}</integer>
           <integer name="lumen_ws_max_frame_chars">${wsMaxFrameChars.get()}</integer>
           <bool name="lumen_mock_enabled">${mockEnabled.get()}</bool>
+          <bool name="lumen_mock_record_overrides">${mockRecordOverrides.get()}</bool>
           <bool name="lumen_debug_fab">${debugFab.get()}</bool>
           <bool name="lumen_debug_logs">${debugLogs.get()}</bool>
       </resources>

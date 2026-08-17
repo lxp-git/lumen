@@ -4,8 +4,12 @@ import dev.lumen.LumenConfig
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -13,6 +17,42 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 class MockEngineTest {
+
+  @get:Rule
+  val tmp = TemporaryFolder()
+
+  /** Pauses [url] on a background thread and returns its fetchId once paused. */
+  private fun pauseInBackground(
+    engine: MockEngine,
+    url: String,
+    method: String = "GET",
+  ): String {
+    val fetchId = AtomicReference<String>()
+    val paused = CountDownLatch(1)
+    val listener = MockEngine.FetchListener { p ->
+      if (p.url == url) {
+        fetchId.set(p.fetchId)
+        paused.countDown()
+      }
+    }
+    engine.addFetchListener(listener)
+    val executor = Executors.newSingleThreadExecutor()
+    executor.submit {
+      engine.pause(
+        networkId = "net-$url",
+        url = url,
+        method = method,
+        headers = emptyMap(),
+        postData = null,
+        requestStage = "Response",
+        timeoutMs = 2_000,
+      )
+    }
+    executor.shutdown()
+    assertTrue(paused.await(2, TimeUnit.SECONDS))
+    engine.removeFetchListener(listener)
+    return fetchId.get()
+  }
 
   @Test
   fun chromeHttpsQuestionMarkPatternMatchesHttpsUrl() {
@@ -189,5 +229,83 @@ class MockEngineTest {
     val decisionA = futureA.get(2, TimeUnit.SECONDS)
     executor.shutdownNow()
     assertTrue(decisionA is MockEngine.Decision.Continue)
+  }
+
+  @Test
+  fun recordedOverrideReplaysWithoutDevToolsAndAcrossRestart() {
+    val dir = tmp.newFolder("mocks")
+    val url = "https://api.example.com/user?id=1"
+    val engine = MockEngine(LumenConfig.DEFAULT)
+    engine.initRecordedRules(dir, recordByDefault = true)
+    engine.enableFetch(listOf(MockEngine.Pattern("*", requestStage = "Response")))
+    val fetchId = pauseInBackground(engine, url)
+    engine.fulfillRequest(
+      fetchId,
+      201,
+      listOf("Content-Type" to "application/json", "Content-Length" to "999"),
+      """{"mock":true}""".toByteArray(),
+    )
+
+    // Replays in the same process with DevTools gone.
+    engine.disableFetch()
+    val live = engine.matchLocalRule(url, "GET")
+    assertEquals("recorded", live!!.source)
+
+    // Replays after a process restart (fresh engine, same directory).
+    val restarted = MockEngine(LumenConfig.DEFAULT)
+    restarted.initRecordedRules(dir, recordByDefault = false)
+    val rule = restarted.matchLocalRule(url, "GET")
+    assertEquals(201, rule!!.status)
+    assertEquals("""{"mock":true}""", String(rule.bodyBytes()))
+    // Stale Content-Length must not survive recording.
+    assertFalse(rule.headers.keys.any { it.equals("Content-Length", ignoreCase = true) })
+    // Exact URL + method keying: no accidental generalisation.
+    assertNull(restarted.matchLocalRule("https://api.example.com/user?id=2", "GET"))
+    assertNull(restarted.matchLocalRule(url, "POST"))
+  }
+
+  @Test
+  fun binaryOverrideBodyRoundTripsThroughSidecarFile() {
+    val dir = tmp.newFolder("mocks")
+    val url = "https://cdn.example.com/logo.png"
+    val binary = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x00, 0xFF.toByte(), 0xFE.toByte())
+    val engine = MockEngine(LumenConfig.DEFAULT)
+    engine.initRecordedRules(dir, recordByDefault = true)
+    engine.enableFetch(listOf(MockEngine.Pattern("*", requestStage = "Response")))
+    engine.fulfillRequest(pauseInBackground(engine, url), 200, listOf("Content-Type" to "image/png"), binary)
+
+    assertTrue(dir.listFiles()!!.any { it.name.endsWith(".body") })
+    val restarted = MockEngine(LumenConfig.DEFAULT)
+    restarted.initRecordedRules(dir, recordByDefault = false)
+    assertArrayEquals(binary, restarted.matchLocalRule(url, "GET")!!.bodyBytes())
+  }
+
+  @Test
+  fun removeRuleDeletesPersistedFiles() {
+    val dir = tmp.newFolder("mocks")
+    val url = "https://api.example.com/flag"
+    val engine = MockEngine(LumenConfig.DEFAULT)
+    engine.initRecordedRules(dir, recordByDefault = true)
+    engine.enableFetch(listOf(MockEngine.Pattern("*", requestStage = "Response")))
+    engine.fulfillRequest(pauseInBackground(engine, url), 200, emptyList(), "on".toByteArray())
+
+    val rule = engine.matchLocalRule(url, "GET")!!
+    assertTrue(File(dir, "${rule.id}.json").exists())
+    assertTrue(engine.removeRule(rule.id))
+    assertFalse(File(dir, "${rule.id}.json").exists())
+    assertNull(engine.matchLocalRule(url, "GET"))
+  }
+
+  @Test
+  fun recordingDisabledByDefaultPersistsNothing() {
+    val dir = tmp.newFolder("mocks")
+    val url = "https://api.example.com/live"
+    val engine = MockEngine(LumenConfig.DEFAULT)
+    engine.initRecordedRules(dir, recordByDefault = false)
+    engine.enableFetch(listOf(MockEngine.Pattern("*", requestStage = "Response")))
+    engine.fulfillRequest(pauseInBackground(engine, url), 200, emptyList(), "tmp".toByteArray())
+
+    assertTrue(dir.listFiles()!!.isEmpty())
+    assertNull(engine.matchLocalRule(url, "GET"))
   }
 }

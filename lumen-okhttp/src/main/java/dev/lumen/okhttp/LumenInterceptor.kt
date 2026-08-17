@@ -96,7 +96,7 @@ class LumenInterceptor : Interceptor {
           Thread.currentThread().interrupt()
         }
       }
-      val bodyBytes = rule.body.toByteArray()
+      val bodyBytes = rule.bodyBytes()
       finishMocked(store, requestId, rule.status, rule.headers, bodyBytes)
       val media = (rule.headers["Content-Type"] ?: "application/json").toMediaTypeOrNull()
       val response = Response.Builder()

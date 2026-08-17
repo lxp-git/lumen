@@ -38,6 +38,7 @@ import dev.lumen.inspector.runtime.RhinoDetectingRuntimeReplFactory
 import dev.lumen.mock.MockEngine
 import dev.lumen.store.EventStore
 import dev.lumen.ui.LumenDebugFab
+import java.io.File
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -84,6 +85,10 @@ object LumenAgent {
 
     val engine = MockEngine(config)
     engine.loadAssetRules(app)
+    engine.initRecordedRules(
+      File(app.filesDir, "lumen/mocks"),
+      recordByDefault = config.mockRecordOverrides,
+    )
     mockEngine = engine
 
     val application = app as? Application

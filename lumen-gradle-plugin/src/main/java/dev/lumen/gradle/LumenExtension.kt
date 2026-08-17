@@ -20,6 +20,8 @@ open class LumenExtension(project: Project) {
   val wsMaxFrames = project.objects.property(Int::class.java).convention(2_500)
   val wsMaxFrameChars = project.objects.property(Int::class.java).convention(16_384)
   val mockEnabled = project.objects.property(Boolean::class.java).convention(true)
+  /** Persist DevTools overrides so they replay without Chrome attached. Off by default. */
+  val mockRecordOverrides = project.objects.property(Boolean::class.java).convention(false)
   val debugFab = project.objects.property(Boolean::class.java).convention(true)
   /** Write Lumen agent diagnostics to logcat. Off by default. */
   val debugLogs = project.objects.property(Boolean::class.java).convention(false)

@@ -28,6 +28,13 @@ data class LumenConfig(
   val maxWsFrameChars: Int = 16_384,
   /** Enable CDP Fetch bridging (Chrome Network Override / block). */
   val mockEnabled: Boolean = true,
+  /**
+   * Persist DevTools overrides (`Fetch.fulfillRequest` with a body) under
+   * `filesDir/lumen/mocks/` so they replay with no DevTools attached and
+   * across restarts. Off by default so an override can't silently freeze an
+   * API after the session ends.
+   */
+  val mockRecordOverrides: Boolean = false,
   /** Show the in-app debug FAB for segment switch / HAR export. */
   val debugFabEnabled: Boolean = true,
   /**
@@ -62,6 +69,7 @@ data class LumenConfig(
         maxWsFramesPerSocket = intRes("lumen_ws_max_frames", 2_500).coerceAtLeast(50),
         maxWsFrameChars = intRes("lumen_ws_max_frame_chars", 16_384).coerceAtLeast(256),
         mockEnabled = boolRes("lumen_mock_enabled", true),
+        mockRecordOverrides = boolRes("lumen_mock_record_overrides", false),
         debugFabEnabled = boolRes("lumen_debug_fab", true),
         debugLogsEnabled = boolRes("lumen_debug_logs", false),
       )

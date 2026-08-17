@@ -31,6 +31,7 @@ class Lumen(
       segments = store.logs.listSegments().size,
       pastNetworkSessions = sessions.count { !it.current },
       mockRuleCount = mockEngine.listRules().size,
+      mockRecording = mockEngine.isRecordingOverrides(),
     )
   }
 
@@ -97,6 +98,7 @@ class Lumen(
         id = r.id,
         urlContains = r.urlContains,
         urlGlob = r.urlGlob,
+        urlEquals = r.urlEquals,
         method = r.method,
         status = r.status,
         delayMs = r.delayMs,
@@ -131,6 +133,14 @@ class Lumen(
     return ValueResult(if (ok) "ok" else "not-found")
   }
 
+  /** Toggle persisting DevTools overrides as replayable offline rules. */
+  @ChromeDevtoolsMethod
+  fun setMockRecording(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
+    val enabled = params?.optBoolean("enabled", true) ?: true
+    mockEngine.setRecordOverrides(enabled)
+    return ValueResult(if (enabled) "recording" else "stopped")
+  }
+
   class StatusResult(
     @JvmField @JsonProperty val retentionDays: Int,
     @JvmField @JsonProperty val logPageSize: Int,
@@ -139,6 +149,7 @@ class Lumen(
     @JvmField @JsonProperty val segments: Int,
     @JvmField @JsonProperty val pastNetworkSessions: Int,
     @JvmField @JsonProperty val mockRuleCount: Int,
+    @JvmField @JsonProperty val mockRecording: Boolean,
   ) : JsonRpcResult
 
   class ValueResult(
@@ -178,6 +189,7 @@ class Lumen(
     @JvmField @JsonProperty val id: String,
     @JvmField @JsonProperty val urlContains: String?,
     @JvmField @JsonProperty val urlGlob: String?,
+    @JvmField @JsonProperty val urlEquals: String?,
     @JvmField @JsonProperty val method: String?,
     @JvmField @JsonProperty val status: Int,
     @JvmField @JsonProperty val delayMs: Long,

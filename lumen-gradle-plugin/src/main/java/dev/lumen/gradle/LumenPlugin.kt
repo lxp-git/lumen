@@ -71,6 +71,7 @@ class LumenPlugin : Plugin<Project> {
         task.wsMaxFrames.set(ext.wsMaxFrames)
         task.wsMaxFrameChars.set(ext.wsMaxFrameChars)
         task.mockEnabled.set(ext.mockEnabled)
+        task.mockRecordOverrides.set(ext.mockRecordOverrides)
         task.debugFab.set(ext.debugFab)
         task.debugLogs.set(ext.debugLogs)
         task.outputDirectory.set(
