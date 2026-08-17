@@ -214,7 +214,10 @@ class MockEngine(
     responseBody: ByteArray? = null,
     timeoutMs: Long = 120_000L,
   ): Decision {
-    val fetchId = nextFetchId.getAndIncrement().toString()
+    // Prefixed so a fetchId can never equal a Network requestId (bare integers from
+    // NetworkEventReporterImpl); resolvePending's dual lookup relies on the two
+    // namespaces staying disjoint.
+    val fetchId = "lumen-fetch-${nextFetchId.getAndIncrement()}"
     val pendingWait = Pending(fetchId = fetchId, networkId = networkId, responseBody = responseBody)
     pending[fetchId] = pendingWait
     pendingByNetworkId[networkId] = fetchId
