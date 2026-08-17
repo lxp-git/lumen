@@ -21,6 +21,8 @@ import dev.lumen.ui.LumenShell
  * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method listLogSegments
  * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method setActiveLogSegment --arg live
  * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method setActiveLogSegment --arg seg-3
+ * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method listMockRules
+ * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method clearMockRules --arg recorded
  * ```
  */
 class LumenAdbProvider : ContentProvider() {
@@ -55,6 +57,25 @@ class LumenAdbProvider : ContentProvider() {
           out.putInt("networkCount", store.network.allRecords().size)
           out.putInt("segments", store.logs.listSegments().size)
           out.putString("active", store.logs.activeSegmentId ?: "live")
+        }
+      }
+      "listMockRules" -> {
+        val engine = LumenAgent.mockEngine
+        out.putString(
+          "result",
+          engine?.listRules()?.joinToString("\n") { r ->
+            "${r.id} [${r.source}] ${r.method ?: "*"} " +
+              "${r.urlEquals ?: r.urlGlob ?: r.urlContains ?: "*"} -> ${r.status}"
+          }?.ifEmpty { "no rules" } ?: "error: not started",
+        )
+      }
+      "clearMockRules" -> {
+        val engine = LumenAgent.mockEngine
+        if (engine == null) {
+          out.putString("result", "error: not started")
+        } else {
+          val source = (arg ?: extras?.getString("source"))?.takeIf { it.isNotEmpty() }
+          out.putString("result", "removed ${engine.clearRules(source)}")
         }
       }
       else -> out.putString("result", "error: unknown method $method")

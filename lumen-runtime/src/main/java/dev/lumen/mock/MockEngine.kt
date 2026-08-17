@@ -255,6 +255,25 @@ class MockEngine(
     return removed
   }
 
+  /**
+   * Remove rules in bulk — all of them, or only those from [source]
+   * ("recorded" / "runtime" / "asset"). Persisted files go with them.
+   * Returns how many rules were removed.
+   */
+  fun clearRules(source: String? = null): Int {
+    val victims = localRules.filter { source == null || it.source == source }
+    if (victims.isEmpty()) return 0
+    localRules.removeAll(victims)
+    recordedRulesDir?.let { dir ->
+      for (rule in victims) {
+        File(dir, "${rule.id}.json").delete()
+        File(dir, "${rule.id}.body").delete()
+      }
+    }
+    FetchLog.i("cleared ${victims.size} mock rules${if (source != null) " source=$source" else ""}")
+    return victims.size
+  }
+
   fun shouldPauseForFetch(url: String, stage: String = "Request"): Boolean {
     if (!isFetchEnabled()) return false
     return patterns.any {

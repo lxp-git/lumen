@@ -297,6 +297,29 @@ class MockEngineTest {
   }
 
   @Test
+  fun clearRulesBySourceDeletesRecordedFilesButKeepsOthers() {
+    val dir = tmp.newFolder("mocks")
+    val engine = MockEngine(LumenConfig.DEFAULT)
+    engine.initRecordedRules(dir, recordByDefault = true)
+    engine.enableFetch(listOf(MockEngine.Pattern("*", requestStage = "Response")))
+    engine.fulfillRequest(
+      pauseInBackground(engine, "https://api.example.com/a"),
+      200,
+      emptyList(),
+      "a".toByteArray(),
+    )
+    engine.addRuntimeRule(urlContains = "runtime-only")
+    assertEquals(2, engine.listRules().size)
+
+    assertEquals(1, engine.clearRules("recorded"))
+    assertTrue(dir.listFiles()!!.isEmpty())
+    assertEquals("runtime", engine.listRules().single().source)
+
+    assertEquals(1, engine.clearRules())
+    assertTrue(engine.listRules().isEmpty())
+  }
+
+  @Test
   fun recordingDisabledByDefaultPersistsNothing() {
     val dir = tmp.newFolder("mocks")
     val url = "https://api.example.com/live"

@@ -141,6 +141,13 @@ class Lumen(
     return ValueResult(if (enabled) "recording" else "stopped")
   }
 
+  /** Bulk-remove mock rules; optional `source` limits to "recorded" / "runtime" / "asset". */
+  @ChromeDevtoolsMethod
+  fun clearMockRules(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
+    val source = params?.optString("source")?.takeIf { it.isNotEmpty() }
+    return ValueResult("removed ${mockEngine.clearRules(source)}")
+  }
+
   class StatusResult(
     @JvmField @JsonProperty val retentionDays: Int,
     @JvmField @JsonProperty val logPageSize: Int,

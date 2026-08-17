@@ -94,7 +94,16 @@ adb shell am start -n <pkg>/dev.lumen.ui.LumenLogSegmentsActivity
 
 `urlGlob`, `method`, and `delayMs` are also accepted. Rules apply without DevTools attached.
 
-**Recorded overrides** (`mockRecordOverrides.set(true)`, or `Lumen.setMockRecording` at runtime) — while DevTools is attached, every override Chrome fulfils (Local Overrides or manual `Fetch.fulfillRequest` with a body) is persisted under `filesDir/lumen/mocks/` and replayed on exact URL + method. Mocks authored in the Chrome UI keep working after DevTools disconnects and across process restarts. Off by default so an override can't silently freeze an API; inspect with `Lumen.listMockRules`, delete with `Lumen.removeMockRule` (also removes the files).
+**Recorded overrides** (`mockRecordOverrides.set(true)`, or `Lumen.setMockRecording` at runtime) — while DevTools is attached, every override Chrome fulfils (Local Overrides or manual `Fetch.fulfillRequest` with a body) is persisted under `filesDir/lumen/mocks/` and replayed on exact URL + method. Mocks authored in the Chrome UI keep working after DevTools disconnects and across process restarts. Off by default so an override can't silently freeze an API; inspect with `Lumen.listMockRules`, delete one with `Lumen.removeMockRule` (also removes the files).
+
+Done mocking? Clear everything on-device without Chrome:
+
+```bash
+adb shell content call --uri content://<pkg>.lumen-adb --method listMockRules
+adb shell content call --uri content://<pkg>.lumen-adb --method clearMockRules --arg recorded   # or omit the arg for all
+```
+
+`Lumen.clearMockRules {"source":"recorded"}` does the same over CDP.
 
 **Export** — HAR and a log bundle from the notification / FAB. `exportHar` can target a past `session-*`. Files land in the app’s private files dir (the toast / `Lumen.exportHar` result shows the full path); on a debug build fetch them with:
 
