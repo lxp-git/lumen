@@ -83,16 +83,25 @@ class MockEngine(
   private val patterns = CopyOnWriteArrayList<Pattern>()
   private val localRules = CopyOnWriteArrayList<LocalRule>()
   private val pending = ConcurrentHashMap<String, Pending>()
+  private val pendingByNetworkId = ConcurrentHashMap<String, String>()
+  private val streams = ConcurrentHashMap<String, ByteArray>()
   private val fetchListeners = CopyOnWriteArrayList<FetchListener>()
   private val nextFetchId = AtomicLong(1)
 
   private class Pending(
+    val fetchId: String,
+    val networkId: String,
     val latch: CountDownLatch = CountDownLatch(1),
     @Volatile var decision: Decision? = null,
     @Volatile var responseBody: ByteArray? = null,
   )
 
-  fun addFetchListener(listener: FetchListener) = fetchListeners.add(listener)
+  fun addFetchListener(listener: FetchListener) {
+    if (!fetchListeners.contains(listener)) {
+      fetchListeners.add(listener)
+    }
+  }
+
   fun removeFetchListener(listener: FetchListener) = fetchListeners.remove(listener)
 
   fun enableFetch(patterns: List<Pattern>) {
@@ -106,6 +115,7 @@ class MockEngine(
       this.patterns.addAll(patterns)
     }
     fetchEnabled.set(true)
+    FetchLog.i("Fetch.enable patterns=${this.patterns.joinToString { "${it.requestStage}:${it.urlPattern}" }}")
   }
 
   fun disableFetch() {
@@ -117,6 +127,7 @@ class MockEngine(
       p.latch.countDown()
       pending.remove(id)
     }
+    pendingByNetworkId.clear()
   }
 
   fun isFetchEnabled(): Boolean = fetchEnabled.get()
@@ -195,7 +206,7 @@ class MockEngine(
     method: String,
     headers: Map<String, String>,
     postData: String?,
-    resourceType: String = "Other",
+    resourceType: String = "XHR",
     requestStage: String = "Request",
     responseStatusCode: Int? = null,
     responseStatusText: String? = null,
@@ -204,8 +215,13 @@ class MockEngine(
     timeoutMs: Long = 120_000L,
   ): Decision {
     val fetchId = nextFetchId.getAndIncrement().toString()
-    val pendingWait = Pending(responseBody = responseBody)
+    val pendingWait = Pending(fetchId = fetchId, networkId = networkId, responseBody = responseBody)
     pending[fetchId] = pendingWait
+    pendingByNetworkId[networkId] = fetchId
+    FetchLog.i(
+      "pause fetchId=$fetchId networkId=$networkId stage=$requestStage " +
+        "status=$responseStatusCode body=${responseBody?.size ?: -1} $method $url",
+    )
     val paused = PausedRequest(
       fetchId = fetchId,
       networkId = networkId,
@@ -228,22 +244,49 @@ class MockEngine(
     }
     val ok = pendingWait.latch.await(timeoutMs, TimeUnit.MILLISECONDS)
     pending.remove(fetchId)
+    pendingByNetworkId.remove(networkId)
     if (!ok) {
-      LogRedirector.w(tag, "Fetch pause timed out for $url after ${timeoutMs}ms — continuing")
+      FetchLog.w("Fetch pause timed out fetchId=$fetchId after ${timeoutMs}ms — continuing $url")
       return Decision.TimedOut(timeoutMs)
     }
-    return pendingWait.decision ?: Decision.Continue()
+    val decision = pendingWait.decision ?: Decision.Continue()
+    FetchLog.i("resume fetchId=$fetchId decision=${decision::class.java.simpleName}")
+    return decision
   }
 
-  fun getPausedBody(fetchId: String): ByteArray? = pending[fetchId]?.responseBody
+  fun getPausedBody(requestId: String): ByteArray? = resolvePending(requestId)?.responseBody
+
+  fun openBodyStream(requestId: String): String? {
+    val body = getPausedBody(requestId) ?: return null
+    val handle = "lumen-stream-$requestId"
+    streams[handle] = body
+    FetchLog.i("openBodyStream requestId=$requestId handle=$handle bytes=${body.size}")
+    return handle
+  }
+
+  fun readStream(handle: String): ByteArray? = streams[handle]
+
+  fun closeStream(handle: String) {
+    streams.remove(handle)
+  }
 
   fun fulfillRequest(
     fetchId: String,
     responseCode: Int,
     responseHeaders: List<Pair<String, String>>,
-    body: ByteArray,
+    body: ByteArray?,
   ) {
-    complete(fetchId, Decision.Fulfill(responseCode, responseHeaders, body))
+    val pendingWait = resolvePending(fetchId)
+    val resolvedBody = when {
+      body != null -> body
+      pendingWait?.responseBody != null -> pendingWait.responseBody!!
+      else -> ByteArray(0)
+    }
+    FetchLog.i(
+      "fulfill requestId=$fetchId code=$responseCode headers=${responseHeaders.size} " +
+        "body=${resolvedBody.size} usedOriginal=${body == null}",
+    )
+    complete(fetchId, Decision.Fulfill(responseCode, responseHeaders, resolvedBody))
   }
 
   fun continueRequest(
@@ -262,11 +305,22 @@ class MockEngine(
   }
 
   fun failRequest(fetchId: String, errorReason: String) {
+    FetchLog.w("fail requestId=$fetchId reason=$errorReason")
     complete(fetchId, Decision.Fail(errorReason))
   }
 
+  private fun resolvePending(requestId: String): Pending? {
+    pending[requestId]?.let { return it }
+    val mapped = pendingByNetworkId[requestId] ?: return null
+    return pending[mapped]
+  }
+
   private fun complete(fetchId: String, decision: Decision) {
-    val p = pending[fetchId] ?: return
+    val p = resolvePending(fetchId)
+    if (p == null) {
+      FetchLog.w("complete missed requestId=$fetchId pending=${pending.keys} decision=${decision::class.java.simpleName}")
+      return
+    }
     p.decision = decision
     p.latch.countDown()
   }
@@ -306,13 +360,26 @@ class MockEngine(
 
   private fun matches(pattern: String, url: String): Boolean {
     if (pattern == "*" || pattern == "<all_urls>") return true
-    // CDP patterns are simple globs: * is a wildcard, everything else is literal.
-    // (Regex.escape produces \Q…\E quoting, so escape each literal segment and
-    // join with ".*" instead of trying to post-process the escaped string.)
-    val regex = Regex(
-      pattern.split("*").joinToString(separator = ".*", transform = Regex::escape),
-      RegexOption.IGNORE_CASE,
-    )
-    return regex.matches(url)
+    // CDP urlPattern: '*' = any run, '?' = one char, '\' escapes the next char.
+    val regex = buildString {
+      append('^')
+      var index = 0
+      while (index < pattern.length) {
+        when (val char = pattern[index]) {
+          '*' -> append(".*")
+          '?' -> append('.')
+          '\\' -> {
+            if (index + 1 < pattern.length) {
+              append(Regex.escape(pattern[index + 1].toString()))
+              index++
+            }
+          }
+          else -> append(Regex.escape(char.toString()))
+        }
+        index++
+      }
+      append('$')
+    }
+    return Regex(regex, RegexOption.IGNORE_CASE).matches(url)
   }
 }

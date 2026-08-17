@@ -1,6 +1,7 @@
 package dev.lumen.inspector.protocol.module
 
 import android.util.Base64
+import android.util.Log
 import dev.lumen.inspector.helper.ChromePeerManager
 import dev.lumen.inspector.helper.PeerRegistrationListener
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer
@@ -25,6 +26,7 @@ class Fetch(
 ) : ChromeDevtoolsDomain {
 
   private val peers = ChromePeerManager()
+  private val logTag = "LumenFetch"
 
   private val fetchListener = MockEngine.FetchListener { paused ->
     val params = JSONObject()
@@ -41,9 +43,10 @@ class Fetch(
       .put("frameId", "1")
       .put("resourceType", paused.resourceType)
       .put("networkId", paused.networkId)
+      .put("requestStage", paused.requestStage)
     if (paused.requestStage.equals("Response", ignoreCase = true)) {
       // Chrome Local Overrides only replace the body when this event looks
-      // like a Response-stage pause (responseStatusCode present).
+      // like a Response-stage pause (responseStatusCode + requestStage).
       paused.responseStatusCode?.let { params.put("responseStatusCode", it) }
       paused.responseStatusText?.let { params.put("responseStatusText", it) }
       val headerArr = JSONArray()
@@ -52,6 +55,7 @@ class Fetch(
       }
       params.put("responseHeaders", headerArr)
     }
+    Log.i(logTag, "requestPaused fetchId=${paused.fetchId} stage=${paused.requestStage} ${paused.method} ${paused.url}")
     peers.sendNotificationToPeers("Fetch.requestPaused", params)
   }
 
@@ -86,6 +90,7 @@ class Fetch(
       }
     }
     engine.enableFetch(patterns)
+    Log.i(logTag, "enable patterns=${patterns.size} handleAuth=${params?.optBoolean("handleAuthRequests")}")
   }
 
   @ChromeDevtoolsMethod
@@ -109,23 +114,19 @@ class Fetch(
         val h = headerArr.getJSONObject(i)
         headers.add(h.getString("name") to h.getString("value"))
       }
+    } else if (params.has("binaryResponseHeaders")) {
+      headers.addAll(parseBinaryHeaders(params.getString("binaryResponseHeaders")))
     }
-    val bodyBytes = if (params.has("body")) {
-      val raw = params.getString("body")
-      if (params.optBoolean("binaryResponseHeaders", false)) {
-        Base64.decode(raw, Base64.DEFAULT)
-      } else {
-        // CDP sends body as base64 when the binary flag is set; Chrome often base64-encodes anyway.
-        try {
-          Base64.decode(raw, Base64.DEFAULT)
-        } catch (_: IllegalArgumentException) {
-          raw.toByteArray(Charsets.UTF_8)
-        }
-      }
+    val bodyBytes = if (params.has("body") && !params.isNull("body")) {
+      decodeCdpBody(params.getString("body"))
     } else {
-      ByteArray(0)
+      null
     }
-    // Mark the corresponding network record as mocked when we can map ids.
+    Log.i(
+      logTag,
+      "fulfillRequest requestId=$fetchId code=$code headers=${headers.size} " +
+        "body=${bodyBytes?.size ?: "omit"}",
+    )
     engine.fulfillRequest(fetchId, code, headers, bodyBytes)
   }
 
@@ -149,6 +150,7 @@ class Fetch(
     if (params == null) return
     val fetchId = params.getString("requestId")
     val reason = params.optString("errorReason", "Failed")
+    Log.w(logTag, "failRequest requestId=$fetchId reason=$reason")
     engine.failRequest(fetchId, reason)
   }
 
@@ -171,16 +173,59 @@ class Fetch(
   fun getResponseBody(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
     val fetchId = params?.optString("requestId").orEmpty()
     val bytes = engine.getPausedBody(fetchId) ?: ByteArray(0)
+    Log.i(logTag, "getResponseBody requestId=$fetchId bytes=${bytes.size}")
     return GetResponseBodyResult(
       body = Base64.encodeToString(bytes, Base64.NO_WRAP),
       base64Encoded = true,
     )
   }
 
+  /**
+   * Chrome 128+ Local Overrides prefer a stream over [getResponseBody]. The dispatcher
+   * stub-acks unknown methods as `{}`, which makes DevTools think it has a stream and
+   * then abort the intercept with a canceled IOException.
+   */
+  @ChromeDevtoolsMethod
+  fun takeResponseBodyAsStream(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
+    val fetchId = params?.optString("requestId").orEmpty()
+    val handle = engine.openBodyStream(fetchId)
+    Log.i(logTag, "takeResponseBodyAsStream requestId=$fetchId handle=$handle")
+    return StreamHandleResult(stream = handle ?: "")
+  }
+
   class GetResponseBodyResult(
     @JvmField @JsonProperty val body: String,
     @JvmField @JsonProperty val base64Encoded: Boolean,
   ) : JsonRpcResult
+
+  class StreamHandleResult(
+    @JvmField @JsonProperty val stream: String,
+  ) : JsonRpcResult
+
+  private fun decodeCdpBody(raw: String): ByteArray {
+    return try {
+      Base64.decode(raw, Base64.DEFAULT)
+    } catch (_: IllegalArgumentException) {
+      raw.toByteArray(Charsets.UTF_8)
+    }
+  }
+
+  private fun parseBinaryHeaders(encoded: String): List<Pair<String, String>> {
+    val decoded = try {
+      String(Base64.decode(encoded, Base64.DEFAULT), Charsets.UTF_8)
+    } catch (_: IllegalArgumentException) {
+      encoded
+    }
+    val headers = ArrayList<Pair<String, String>>()
+    val separator = 0.toChar().toString()
+    for (entry in decoded.split(separator)) {
+      if (entry.isEmpty()) continue
+      val idx = entry.indexOf(':')
+      if (idx <= 0) continue
+      headers.add(entry.substring(0, idx).trim() to entry.substring(idx + 1).trim())
+    }
+    return headers
+  }
 
   private fun parseHeaderList(headerArr: JSONArray?): List<Pair<String, String>>? {
     if (headerArr == null) return null

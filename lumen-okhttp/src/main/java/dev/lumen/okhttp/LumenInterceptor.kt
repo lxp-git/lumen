@@ -123,6 +123,7 @@ class LumenInterceptor : Interceptor {
           headers = headers,
           postData = postData,
           requestStage = "Request",
+          resourceType = "XHR",
         )
       ) {
         is MockEngine.Decision.Fulfill -> {
@@ -169,6 +170,10 @@ class LumenInterceptor : Interceptor {
     try {
       response = chain.proceed(request)
     } catch (e: IOException) {
+      android.util.Log.w(
+        "LumenFetch",
+        "chain.proceed failed ${e.javaClass.simpleName}: ${e.message} $requestId ${request.url}",
+      )
       store?.network?.update(requestId) {
         it.failedReason = e.toString()
         it.finishedAtMs = System.currentTimeMillis()
