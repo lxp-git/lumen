@@ -64,8 +64,8 @@ tasks.named('compileKotlin') { dependsOn(generateVersion) }
 tasks.matching { it.name == 'sourcesJar' }.configureEach { dependsOn(generateVersion) }
 
 gradlePlugin {
-    website = 'https://github.com/lxp-git/stetho'
-    vcsUrl = 'https://github.com/lxp-git/stetho.git'
+    website = 'https://github.com/lxp-git/lumen'
+    vcsUrl = 'https://github.com/lxp-git/lumen.git'
     plugins {
         lumen {
             id = lumenPluginId
@@ -95,17 +95,17 @@ publishing {
         pom {
             name = 'Lumen Gradle Plugin'
             description = 'Applies Lumen to debuggable Android variants (OkHttp weave + agent)'
-            url = 'https://github.com/lxp-git/stetho'
+            url = 'https://github.com/lxp-git/lumen'
             licenses {
                 license {
                     name = 'MIT License'
-                    url = 'https://github.com/lxp-git/stetho/blob/main/LICENSE'
+                    url = 'https://github.com/lxp-git/lumen/blob/main/LICENSE'
                 }
             }
             scm {
-                url = 'https://github.com/lxp-git/stetho'
-                connection = 'scm:git:https://github.com/lxp-git/stetho.git'
-                developerConnection = 'scm:git:ssh://git@github.com/lxp-git/stetho.git'
+                url = 'https://github.com/lxp-git/lumen'
+                connection = 'scm:git:https://github.com/lxp-git/lumen.git'
+                developerConnection = 'scm:git:ssh://git@github.com/lxp-git/lumen.git'
             }
             developers {
                 developer {

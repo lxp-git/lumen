@@ -18,11 +18,11 @@ mavenPublishing {
         name = project.name
         description = 'Lumen Android debug agent (Chrome DevTools)'
         inceptionYear = '2026'
-        url = 'https://github.com/lxp-git/stetho'
+        url = 'https://github.com/lxp-git/lumen'
         licenses {
             license {
                 name = 'MIT License'
-                url = 'https://github.com/lxp-git/stetho/blob/main/LICENSE'
+                url = 'https://github.com/lxp-git/lumen/blob/main/LICENSE'
                 distribution = 'repo'
             }
         }
@@ -34,9 +34,9 @@ mavenPublishing {
             }
         }
         scm {
-            url = 'https://github.com/lxp-git/stetho'
-            connection = 'scm:git:https://github.com/lxp-git/stetho.git'
-            developerConnection = 'scm:git:ssh://git@github.com/lxp-git/stetho.git'
+            url = 'https://github.com/lxp-git/lumen'
+            connection = 'scm:git:https://github.com/lxp-git/lumen.git'
+            developerConnection = 'scm:git:ssh://git@github.com/lxp-git/lumen.git'
         }
     }
 }
