@@ -24,7 +24,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -34,7 +33,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * implementation will be automatically wired up to them.
  */
 public class NetworkEventReporterImpl implements NetworkEventReporter {
-  private final AtomicInteger mNextRequestId = new AtomicInteger(0);
   private static final AtomicLong sWebSocketFrameSeq = new AtomicLong();
   @Nullable
   private ResourceTypeHelper mResourceTypeHelper;
@@ -355,7 +353,7 @@ public class NetworkEventReporterImpl implements NetworkEventReporter {
 
   @Override
   public String nextRequestId() {
-    return String.valueOf(mNextRequestId.getAndIncrement());
+    return NetworkRequestIds.next();
   }
 
   @Nullable

@@ -107,6 +107,10 @@ class MockEngine(
   private val nextFetchId = AtomicLong(1)
   private val recordOverrides = AtomicBoolean(false)
 
+  /** Pid-qualified so ids stay unique across restarts; myPid() is unmocked on JVM unit tests. */
+  private val fetchIdPrefix =
+    "lumen-fetch-${runCatching { android.os.Process.myPid() }.getOrDefault(0)}"
+
   @Volatile
   private var recordedRulesDir: File? = null
 
@@ -302,7 +306,7 @@ class MockEngine(
     // Prefixed so a fetchId can never equal a Network requestId (bare integers from
     // NetworkEventReporterImpl); resolvePending's dual lookup relies on the two
     // namespaces staying disjoint.
-    val fetchId = "lumen-fetch-${nextFetchId.getAndIncrement()}"
+    val fetchId = "$fetchIdPrefix.${nextFetchId.getAndIncrement()}"
     val pendingWait = Pending(
       fetchId = fetchId,
       networkId = networkId,
