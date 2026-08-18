@@ -13,7 +13,7 @@ It started as a Facebook Stetho fork. New work lives in `lumen-*`. You do not ca
 | Network mock | Observe only | Chrome Fetch / Local Overrides (recordable for offline replay) + `assets/lumen-mocks` |
 | Console | Live only | 7-day logcat archive, paged |
 
-Current version: **0.1.1**.
+Current version: **0.1.2**.
 
 ## Requirements
 
@@ -28,7 +28,7 @@ Do **not** add `implementation("io.github.lxp-git:…")` or a custom Maven URL. 
 ```kotlin
 plugins {
   id("com.android.application")
-  id("io.github.lxp-git.lumen") version "0.1.1"
+  id("io.github.lxp-git.lumen") version "0.1.2"
 }
 
 // optional — Groovy can assign (`retentionDays = 7`)
@@ -39,13 +39,13 @@ lumen {
 }
 ```
 
-Multi-module: `id("io.github.lxp-git.lumen") version "0.1.1" apply false` on the root `plugins {}` block, then `id("io.github.lxp-git.lumen")` on the app module.
+Multi-module: `id("io.github.lxp-git.lumen") version "0.1.2" apply false` on the root `plugins {}` block, then `id("io.github.lxp-git.lumen")` on the app module.
 
 The plugin adds `io.github.lxp-git:lumen-okhttp` (and `lumen-runtime`) only to **debuggable** variants, weaves `OkHttpClient.Builder.build()` / `newWebSocket`, and merges the init ContentProviders into the debug manifest.
 
 Release stays clean unless you set `debugOnly.set(false)`, mark the release type `debuggable true`, or add the libraries yourself.
 
-`id("io.github.lxp-git.lumen")` 0.1.1 is on the Gradle Plugin Portal (first-time namespace approval can take a few days). After that, stock `gradlePluginPortal()` + `mavenCentral()` is enough. The plugin id uses the GitHub namespace because Plugin Portal requires proof of `lumen.dev` for `dev.lumen`.
+`id("io.github.lxp-git.lumen")` 0.1.2 is on the Gradle Plugin Portal (first-time namespace approval can take a few days). After that, stock `gradlePluginPortal()` + `mavenCentral()` is enough. The plugin id uses the GitHub namespace because Plugin Portal requires proof of `lumen.dev` for `dev.lumen`.
 
 ## Use it
 
