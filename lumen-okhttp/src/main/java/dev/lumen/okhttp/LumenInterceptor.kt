@@ -170,7 +170,7 @@ class LumenInterceptor : Interceptor {
     try {
       response = chain.proceed(request)
     } catch (e: IOException) {
-      android.util.Log.w(
+      dev.lumen.common.LogRedirector.w(
         "LumenFetch",
         "chain.proceed failed ${e.javaClass.simpleName}: ${e.message} $requestId ${request.url}",
       )

@@ -1,7 +1,6 @@
 package dev.lumen.inspector.protocol.module
 
 import android.util.Base64
-import android.util.Log
 import dev.lumen.inspector.helper.ChromePeerManager
 import dev.lumen.inspector.helper.PeerRegistrationListener
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer
@@ -9,6 +8,7 @@ import dev.lumen.inspector.jsonrpc.JsonRpcResult
 import dev.lumen.inspector.protocol.ChromeDevtoolsDomain
 import dev.lumen.inspector.protocol.ChromeDevtoolsMethod
 import dev.lumen.json.annotation.JsonProperty
+import dev.lumen.mock.FetchLog
 import dev.lumen.mock.MockEngine
 import dev.lumen.store.EventStore
 import org.json.JSONArray
@@ -26,7 +26,6 @@ class Fetch(
 ) : ChromeDevtoolsDomain {
 
   private val peers = ChromePeerManager()
-  private val logTag = "LumenFetch"
 
   private val fetchListener = MockEngine.FetchListener { paused ->
     val params = JSONObject()
@@ -55,7 +54,7 @@ class Fetch(
       }
       params.put("responseHeaders", headerArr)
     }
-    Log.i(logTag, "requestPaused fetchId=${paused.fetchId} stage=${paused.requestStage} ${paused.method} ${paused.url}")
+    FetchLog.i("requestPaused fetchId=${paused.fetchId} stage=${paused.requestStage} ${paused.method} ${paused.url}")
     peers.sendNotificationToPeers("Fetch.requestPaused", params)
   }
 
@@ -90,7 +89,7 @@ class Fetch(
       }
     }
     engine.enableFetch(patterns)
-    Log.i(logTag, "enable patterns=${patterns.size} handleAuth=${params?.optBoolean("handleAuthRequests")}")
+    FetchLog.i("enable patterns=${patterns.size} handleAuth=${params?.optBoolean("handleAuthRequests")}")
   }
 
   @ChromeDevtoolsMethod
@@ -122,8 +121,7 @@ class Fetch(
     } else {
       null
     }
-    Log.i(
-      logTag,
+    FetchLog.i(
       "fulfillRequest requestId=$fetchId code=$code headers=${headers.size} " +
         "body=${bodyBytes?.size ?: "omit"}",
     )
@@ -150,7 +148,7 @@ class Fetch(
     if (params == null) return
     val fetchId = params.getString("requestId")
     val reason = params.optString("errorReason", "Failed")
-    Log.w(logTag, "failRequest requestId=$fetchId reason=$reason")
+    FetchLog.w("failRequest requestId=$fetchId reason=$reason")
     engine.failRequest(fetchId, reason)
   }
 
@@ -173,7 +171,7 @@ class Fetch(
   fun getResponseBody(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
     val fetchId = params?.optString("requestId").orEmpty()
     val bytes = engine.getPausedBody(fetchId) ?: ByteArray(0)
-    Log.i(logTag, "getResponseBody requestId=$fetchId bytes=${bytes.size}")
+    FetchLog.i("getResponseBody requestId=$fetchId bytes=${bytes.size}")
     return GetResponseBodyResult(
       body = Base64.encodeToString(bytes, Base64.NO_WRAP),
       base64Encoded = true,
@@ -189,7 +187,7 @@ class Fetch(
   fun takeResponseBodyAsStream(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
     val fetchId = params?.optString("requestId").orEmpty()
     val handle = engine.openBodyStream(fetchId)
-    Log.i(logTag, "takeResponseBodyAsStream requestId=$fetchId handle=$handle")
+    FetchLog.i("takeResponseBodyAsStream requestId=$fetchId handle=$handle")
     return StreamHandleResult(stream = handle ?: "")
   }
 

@@ -1,12 +1,12 @@
 package dev.lumen.inspector.protocol.module
 
 import android.util.Base64
-import android.util.Log
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer
 import dev.lumen.inspector.jsonrpc.JsonRpcResult
 import dev.lumen.inspector.protocol.ChromeDevtoolsDomain
 import dev.lumen.inspector.protocol.ChromeDevtoolsMethod
 import dev.lumen.json.annotation.JsonProperty
+import dev.lumen.mock.FetchLog
 import dev.lumen.mock.MockEngine
 import org.json.JSONObject
 
@@ -18,13 +18,11 @@ class IO(
   private val engine: MockEngine,
 ) : ChromeDevtoolsDomain {
 
-  private val logTag = "LumenFetch"
-
   @ChromeDevtoolsMethod
   fun read(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
     val handle = params?.optString("handle").orEmpty()
     val bytes = engine.readStream(handle) ?: ByteArray(0)
-    Log.i(logTag, "IO.read handle=$handle bytes=${bytes.size}")
+    FetchLog.i("IO.read handle=$handle bytes=${bytes.size}")
     return ReadResult(
       data = Base64.encodeToString(bytes, Base64.NO_WRAP),
       eof = true,
@@ -36,7 +34,7 @@ class IO(
   fun close(peer: JsonRpcPeer, params: JSONObject?) {
     val handle = params?.optString("handle").orEmpty()
     engine.closeStream(handle)
-    Log.i(logTag, "IO.close handle=$handle")
+    FetchLog.i("IO.close handle=$handle")
   }
 
   class ReadResult(
