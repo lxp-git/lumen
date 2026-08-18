@@ -23,6 +23,9 @@ import dev.lumen.ui.LumenShell
  * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method setActiveLogSegment --arg seg-3
  * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method listMockRules
  * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method clearMockRules --arg recorded
+ * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method yieldInspectSocket
+ * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method resumeInspectSocket
+ * adb shell content call --uri content://&lt;pkg&gt;.lumen-adb --method inspectProxyStatus
  * ```
  */
 class LumenAdbProvider : ContentProvider() {
@@ -77,6 +80,30 @@ class LumenAdbProvider : ContentProvider() {
           val source = (arg ?: extras?.getString("source"))?.takeIf { it.isNotEmpty() }
           out.putString("result", "removed ${engine.clearRules(source)}")
         }
+      }
+      "yieldInspectSocket" -> {
+        val ok = DevtoolsEarlyBind.yieldInspectSocket()
+        out.putString(
+          "result",
+          when {
+            ok -> "ok"
+            DevtoolsEarlyBind.get() == null -> "error: inspect socket not bound"
+            else -> "error: loopback bind failed on 127.0.0.1:${LoopbackCdpServer.PORT}"
+          },
+        )
+        out.putBoolean("loopback", LoopbackCdpServer.isRunning())
+        out.putBoolean("inspectBound", DevtoolsEarlyBind.inspectBound())
+      }
+      "resumeInspectSocket" -> {
+        val ok = DevtoolsEarlyBind.resumeInspectSocket()
+        out.putString("result", if (ok) "ok" else "error: could not rebind")
+        out.putBoolean("inspectBound", DevtoolsEarlyBind.inspectBound())
+      }
+      "inspectProxyStatus" -> {
+        out.putString("result", "ok")
+        out.putBoolean("inspectBound", DevtoolsEarlyBind.inspectBound())
+        out.putBoolean("loopback", LoopbackCdpServer.isRunning())
+        out.putInt("loopbackPort", LoopbackCdpServer.PORT)
       }
       else -> out.putString("result", "error: unknown method $method")
     }

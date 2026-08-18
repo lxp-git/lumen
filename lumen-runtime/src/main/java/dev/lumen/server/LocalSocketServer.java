@@ -33,7 +33,7 @@ public class LocalSocketServer {
 
   private Thread mListenerThread;
   private boolean mStopped;
-  private LocalServerSocket mServerSocket;
+  private volatile LocalServerSocket mServerSocket;
 
   /**
    * @param friendlyName identifier to help debug this server, used for naming threads and such.
@@ -120,8 +120,7 @@ public class LocalSocketServer {
         t.setDaemon(true);
         t.start();
       } catch (SocketException se) {
-        // ignore exception if interrupting the thread
-        if (Thread.interrupted()) {
+        if (mStopped || Thread.interrupted()) {
           break;
         }
         LogUtil.w(se, "I/O error");
@@ -140,20 +139,20 @@ public class LocalSocketServer {
    * Stops the listener thread and unbinds the address.
    */
   public void stop() {
+    Thread listener;
     synchronized (this) {
       mStopped = true;
-      if (mListenerThread == null) {
-        return;
-      }
+      listener = mListenerThread;
     }
-
-    mListenerThread.interrupt();
     try {
       if (mServerSocket != null) {
         mServerSocket.close();
       }
     } catch (IOException e) {
       // Don't care...
+    }
+    if (listener != null) {
+      listener.interrupt();
     }
   }
 

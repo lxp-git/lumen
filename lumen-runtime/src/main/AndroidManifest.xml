@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Loopback CDP for scripts/lumen-proxy.sh (127.0.0.1 only). Debug library. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Auto-start the agent before Application.onCreate. Host apps need no glue code. -->
     <application>
         <provider
