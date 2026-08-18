@@ -7,13 +7,16 @@ import dev.lumen.inspector.protocol.ChromeDevtoolsDomain
 import dev.lumen.inspector.protocol.ChromeDevtoolsMethod
 import dev.lumen.store.EventStore
 import dev.lumen.store.LogArchive
+import dev.lumen.store.LogCatLine
 import dev.lumen.store.LogEntry
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
  * CDP Log domain backed by [EventStore.logs]. Replays a Console-safe page on enable,
- * then streams live lines while the active segment is "latest".
+ * then streams live lines while the active segment is "latest". Every logcat
+ * priority (V/D/I/W/E) is forwarded; Android `D`/`V` are promoted to CDP `info`
+ * because Chrome's Default levels hide `verbose`.
  *
  * Segment switches (notification or `Lumen.setActiveLogSegment`) first emit a
  * `Runtime.consoleAPICalled` of type `clear` so Chrome Console replaces the page
@@ -27,10 +30,7 @@ class Log(
 
   private val logListener = object : LogArchive.Listener {
     override fun onLogEntry(entry: LogEntry) {
-      if (peers.hasRegisteredPeers() &&
-        store.logs.activeSegmentId == null &&
-        entry.level != "verbose"
-      ) {
+      if (peers.hasRegisteredPeers() && store.logs.activeSegmentId == null) {
         peers.sendNotificationToPeers("Log.entryAdded", entryAddedParams(entry))
       }
     }
@@ -71,14 +71,12 @@ class Log(
 
   private fun replayPage(peer: JsonRpcPeer) {
     for (entry in store.logs.pageForReplay()) {
-      if (entry.level == "verbose") continue
       peer.invokeMethod("Log.entryAdded", entryAddedParams(entry), null)
     }
   }
 
   private fun replayToPeers() {
     for (entry in store.logs.pageForReplay()) {
-      if (entry.level == "verbose") continue
       peers.sendNotificationToPeers("Log.entryAdded", entryAddedParams(entry))
     }
   }
@@ -107,7 +105,7 @@ class Log(
       "entry",
       JSONObject()
         .put("source", "other")
-        .put("level", entry.level)
+        .put("level", LogCatLine.chromeLevel(entry.level))
         .put("text", entry.text)
         .put("timestamp", entry.timestampMs),
     )

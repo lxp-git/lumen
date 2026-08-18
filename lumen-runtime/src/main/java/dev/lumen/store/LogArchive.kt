@@ -43,21 +43,7 @@ class LogArchive(
   /** Segment id currently selected for DevTools replay (null = latest). */
   @Volatile var activeSegmentId: String? = null
 
-  private val linePattern =
-    Regex("""^\s*(\d+)\.(\d+)\s+(\d+)\s+(\d+)\s+([VDIWEFS])\s+(.*?)\s*: (.*)$""")
   private val segmentNamePattern = Regex("""spill-(\d+)\.jsonl""")
-
-  private val suppressedTags = setOf(
-    "ChromePeerManager",
-    "LogArchive",
-    "NetworkArchive",
-    "ChromeDevtoolsServer",
-    "MethodDispatcher",
-    "DumpappSocketLikeHandler",
-    "LightHttpServer",
-    "JsonRpcPeer",
-    "WebSocketSession",
-  )
 
   fun addListener(listener: Listener) = listeners.add(listener)
   fun removeListener(listener: Listener) = listeners.remove(listener)
@@ -240,19 +226,9 @@ class LogArchive(
   }
 
   private fun parse(line: String): LogEntry? {
-    val match = linePattern.matchEntire(line)
-      ?: return LogEntry(lastTimestampMs, "info", line)
-    val (secs, fraction, pid, _, priority, logTag, message) = match.destructured
-    if (logTag in suppressedTags) return null
-    val timestampMs = secs.toDouble() * 1000 + "0.$fraction".toDouble() * 1000
-    lastTimestampMs = timestampMs
-    val level = when (priority) {
-      "W" -> "warning"
-      "E", "F" -> "error"
-      "I" -> "info"
-      else -> "verbose"
-    }
-    return LogEntry(timestampMs, level, "$logTag($pid): $message")
+    val entry = LogCatLine.parse(line, lastTimestampMs) ?: return null
+    lastTimestampMs = entry.timestampMs
+    return entry
   }
 
   private fun encode(entry: LogEntry): String =
