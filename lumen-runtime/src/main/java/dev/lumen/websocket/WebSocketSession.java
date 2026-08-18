@@ -48,6 +48,10 @@ class WebSocketSession implements SimpleSession {
     } catch (IOException e) {
       markAndSignalClosed(CloseCodes.CLOSED_ABNORMALLY, null /* reasonPhrase */);
       throw e;
+    } finally {
+      // The caller closes the raw socket as soon as we return; drain queued
+      // frames (e.g. the close handshake) first and release the writer thread.
+      mWriteHandler.shutdown();
     }
   }
 
