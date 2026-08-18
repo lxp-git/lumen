@@ -55,7 +55,7 @@ Release stays clean unless you set `debugOnly.set(false)`, mark the release type
 
 Traffic and logcat from **before** inspect are replayed for this process (about 200 HTTP rows; WebSocket frames up to the per-socket cap).
 
-If you **force-stop or kill** the app, close that DevTools window and inspect again after the process is back. Chrome’s in-window **Reconnect** reloads an empty frontend. The agent cannot hold Chrome’s session after the process is gone.
+If you **force-stop or kill** the app, Chrome’s in-window **Reconnect** reloads an empty frontend. Close that window and inspect again — or keep the same window with the sidecar below.
 
 Chrome Console keeps one page. Flip logcat pages with the in-app **Log pages** control, the notification, or:
 
@@ -70,9 +70,32 @@ adb shell am start -n <pkg>/dev.lumen.ui.LumenLogSegmentsActivity
 
 `LUMEN_PACKAGE` defaults to `dev.lumen.sample`. Use `ANDROID_SERIAL` / `LUMEN_USER` on multi-device or work-profile phones.
 
+### Keep DevTools across process restarts (optional)
+
+`chrome://inspect` attaches to `@lumen_<process>_devtools_remote`. That socket dies with the app. An adb-shell sidecar (uid 2000, not root) can hold the socket so the DevTools window never drops. After the process is back, the sidecar replays `Network.enable` / `Log.enable`; this process’s archive is pushed into the same Network / Console panels, then live rows continue.
+
+```bash
+# rebuild the debug APK with this Lumen, launch it, then:
+LUMEN_PACKAGE=com.flow.mobile ANDROID_SERIAL=<serial> ./scripts/lumen-proxy.sh start
+```
+
+Then inspect as usual. Force-stop or relaunch: the window stays. New HTTP and logcat from the new process show up in the same panels (this process’s replay window — about 200 HTTP rows, one Console page — plus live traffic). Rows already drawn from the previous process stay until you clear the panel.
+
+`start` is a no-op if the sidecar is already listening. `restart` / `stop` / unplugging USB kill that process and Chrome drops the window.
+
+```bash
+./scripts/lumen-proxy.sh status
+./scripts/lumen-proxy.sh stop
+./scripts/lumen-proxy.sh restart   # drops any open inspect window
+```
+
+USB / adb must stay connected. Apps built with this Lumen hand the socket over live — no restart. Only an app built with an older Lumen (no `yieldInspectSocket`) is force-stopped once so the sidecar can bind, then relaunched.
+
+While the sidecar holds the socket, the app serves CDP on `127.0.0.1:18789` (loopback only; adb shell cannot reach app-owned abstract sockets under SELinux). If another process owns that port, `start` aborts with `error: loopback bind failed` and the app keeps the inspect socket — plain `chrome://inspect` keeps working, just without restart survival. Commands sent while the process is down are queued and replayed once it is back.
+
 ## What v1 covers
 
-**Logcat** — written under `filesDir/lumen/logs/`, default 7-day retention, replayed into Console one page at a time. Lumen’s own tags (`LumenCDP`, `LumenWS`, `lumen`, …) stay out of logcat unless `debugLogs.set(true)`.
+**Logcat** — every priority (`V`/`D`/`I`/`W`/`E`) is written under `filesDir/lumen/logs/` (default 7-day retention) and replayed into Console one page at a time. Android `D`/`V` show as Console Info because Chrome hides CDP `verbose` by default. Lumen’s own tags (`LumenFetch`, `LumenCDP`, `LumenWS`, `lumen`, …) stay out of logcat unless `debugLogs.set(true)`.
 
 **Network** — OkHttp requests/responses go to `filesDir/lumen/network/`. `Network.enable` replays the **current process**. Older processes stay in `session-*.jsonl` and come out via HAR export, not mixed into the live panel.
 
@@ -119,7 +142,7 @@ Only **OkHttp** is woven. HttpURLConnection, Cronet, and Socket.IO still on HTTP
 
 | Topic | What happens |
 |---|---|
-| DevTools **Reconnect** after the process dies | Close the window, wait for the process, inspect again |
+| DevTools **Reconnect** after the process dies | Close the window and inspect again. Or run `./scripts/lumen-proxy.sh start` first so the same window stays up |
 | Network panel **Clear** | Same as inspecting a web page: cleared rows (including a still-open socket) do not come back. New HTTP / a **new** WebSocket will. On-disk archive is unchanged |
 | Messages looks like one row overwritten by `3` | Short grid + autoscroll to the latest Engine.IO pong. Scroll up for history |
 | Page screencast | `Page.startScreencast` is a no-op |
