@@ -35,7 +35,7 @@ public class Browser implements ChromeDevtoolsDomain {
     GetVersionResponse result = new GetVersionResponse();
     result.protocolVersion = "1.3";
     result.product = "Lumen";
-    result.revision = "0.1.2";
+    result.revision = "0.2.0";
     result.userAgent = "Lumen (Android " + Build.VERSION.RELEASE +
         "; API " + Build.VERSION.SDK_INT +
         "; " + Build.MANUFACTURER + " " + Build.MODEL + ")";
