@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
-# Hold @lumen_<pkg>_devtools_remote in an adb-shell process (uid 2000, not root)
-# so chrome://inspect keeps the session when the app is force-stopped.
+# Keep chrome://inspect across app restarts (no re-click Inspect).
 #
+# An adb-shell process (uid 2000, not root) holds @lumen_<pkg>_devtools_remote
+# for the USB session. Chrome's in-window Reconnect cannot do this.
+#
+# Daily:
 #   LUMEN_PACKAGE=com.example.app ./scripts/lumen-proxy.sh start
-#   ANDROID_SERIAL=<serial> LUMEN_PACKAGE=com.example.app ./scripts/lumen-proxy.sh start
+#   chrome://inspect → inspect once (lumen://com.example.app)
+#   restart the app as usual — do not click Inspect again
 #
-# Then chrome://inspect → inspect as usual. USB / adb must stay connected.
+#   ./scripts/lumen-proxy.sh start     # no-op if already listening
+#   ./scripts/lumen-proxy.sh status
+#   ./scripts/lumen-proxy.sh stop      # uninstall, or APK older than 0.1.2
+#   ./scripts/lumen-proxy.sh restart   # drops any open inspect window
+#
+# Host apps can copy this file and default LUMEN_PACKAGE to their applicationId.
 # Env: ANDROID_SERIAL, LUMEN_PACKAGE (default dev.lumen.sample), LUMEN_USER,
 #      LUMEN_PROCESS (default = package; set for ":foo" secondary processes)
+# USB / adb must stay connected. Needs Lumen 0.1.2+ (yieldInspectSocket).
 set -euo pipefail
 
 ADB="${ADB:-adb}"

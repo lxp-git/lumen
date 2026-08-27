@@ -49,13 +49,12 @@ Release stays clean unless you set `debugOnly.set(false)`, mark the release type
 
 ## Use it
 
-1. Install a **debug** APK and launch the app.
-2. Chrome → `chrome://inspect/#devices` → inspect the process (`lumen://<package>`).
-3. Network, Console, Elements, Application work as in a web inspect session.
+1. Install a **debug** APK (Lumen 0.1.2+) and launch the app.
+2. Keep the inspect window across restarts (recommended for daily work) — see below — **or** skip to step 3 and re-click Inspect after every process death.
+3. Chrome → `chrome://inspect/#devices` → inspect the process (`lumen://<package>`).
+4. Network, Console, Elements, Application work as in a web inspect session.
 
 Traffic and logcat from **before** inspect are replayed for this process (about 200 HTTP rows; WebSocket frames up to the per-socket cap).
-
-If you **force-stop or kill** the app, Chrome’s in-window **Reconnect** reloads an empty frontend. Close that window and inspect again — or keep the same window with the sidecar below.
 
 Chrome Console keeps one page. Flip logcat pages with the in-app **Log pages** control, the notification, or:
 
@@ -70,28 +69,47 @@ adb shell am start -n <pkg>/dev.lumen.ui.LumenLogSegmentsActivity
 
 `LUMEN_PACKAGE` defaults to `dev.lumen.sample`. Use `ANDROID_SERIAL` / `LUMEN_USER` on multi-device or work-profile phones.
 
-### Keep DevTools across process restarts (optional)
+### Keep DevTools across app restarts
 
-`chrome://inspect` attaches to `@lumen_<process>_devtools_remote`. That socket dies with the app. An adb-shell sidecar (uid 2000, not root) can hold the socket so the DevTools window never drops. After the process is back, the sidecar replays `Network.enable` / `Log.enable`; this process’s archive is pushed into the same Network / Console panels, then live rows continue.
+Chrome’s in-window **Reconnect** is `location.reload()` of a socket that died with the process, so the frontend comes back empty. `chrome://inspect` talks to `@lumen_<process>_devtools_remote`; that name belongs to the app unless a sidecar holds it.
+
+`scripts/lumen-proxy.sh` starts an **adb-shell** process (uid 2000, no root) that owns the inspect socket for the USB session. After a force-stop / Studio Run, the same DevTools window stays up: the sidecar replays `Network.enable` / `Log.enable`, this process’s archive is pushed into Network / Console, then live rows continue. Rows already drawn from the previous process stay until you clear the panel.
+
+Daily loop:
 
 ```bash
-# rebuild the debug APK with this Lumen, launch it, then:
-LUMEN_PACKAGE=com.flow.mobile ANDROID_SERIAL=<serial> ./scripts/lumen-proxy.sh start
+# 1. debug APK installed and launched (USB debugging on)
+LUMEN_PACKAGE=com.example.app ./scripts/lumen-proxy.sh start
+
+# 2. chrome://inspect → inspect once (lumen://com.example.app)
+
+# 3. restart the app as usual — do not click Inspect again
 ```
 
-Then inspect as usual. Force-stop or relaunch: the window stays. New HTTP and logcat from the new process show up in the same panels (this process’s replay window — about 200 HTTP rows, one Console page — plus live traffic). Rows already drawn from the previous process stay until you clear the panel.
-
-`start` is a no-op if the sidecar is already listening. `restart` / `stop` / unplugging USB kill that process and Chrome drops the window.
+Host apps can copy `scripts/lumen-proxy.sh` and default `LUMEN_PACKAGE` to their applicationId so colleagues only run `./scripts/lumen-proxy.sh start`.
 
 ```bash
+./scripts/lumen-proxy.sh start     # no-op if already listening (will not drop the window)
 ./scripts/lumen-proxy.sh status
-./scripts/lumen-proxy.sh stop
-./scripts/lumen-proxy.sh restart   # drops any open inspect window
+./scripts/lumen-proxy.sh stop      # uninstall, or switch to an APK older than 0.1.2
+./scripts/lumen-proxy.sh restart   # replaces the sidecar; drops any open inspect window
 ```
 
-USB / adb must stay connected. Apps built with this Lumen hand the socket over live — no restart. Only an app built with an older Lumen (no `yieldInspectSocket`) is force-stopped once so the sidecar can bind, then relaunched.
+`start` once per USB plug. Unplugging USB, `stop`, `restart`, or rebooting the phone kills the sidecar and Chrome drops the window — plug back in, `start`, inspect once.
 
-While the sidecar holds the socket, the app serves CDP on `127.0.0.1:18789` (loopback only; adb shell cannot reach app-owned abstract sockets under SELinux). If another process owns that port, `start` aborts with `error: loopback bind failed` and the app keeps the inspect socket — plain `chrome://inspect` keeps working, just without restart survival. Commands sent while the process is down are queued and replayed once it is back.
+A 0.1.2+ app yields the inspect socket live (no extra force-stop). An older APK is force-stopped once so the sidecar can bind, then relaunched. If `start` prints `unknown method`, rebuild with Lumen 0.1.2+.
+
+While the sidecar holds the socket, the app serves CDP on `127.0.0.1:18789` (loopback only; SELinux blocks adb shell from app-owned abstract sockets). If that port is taken, `start` aborts with `error: loopback bind failed` and leaves plain `chrome://inspect` working, just without restart survival. CDP commands sent while the process is down are queued and replayed when it is back.
+
+Do not leave the sidecar running after uninstall: Chrome will still list `lumen://<package>` against an empty shell. `stop` first.
+
+### Chrome DevTools MCP (AI agents)
+
+[chrome-devtools-mcp](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session) `--autoConnect` attaches to **desktop Chrome** (your tabs, including `chrome://inspect`). The project's [Android recipe](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/debugging-android.md) forwards `localabstract:chrome_devtools_remote` — that is **Chrome the app on the phone**, not Lumen.
+
+Lumen's inspect socket (`@lumen_<pkg>_devtools_remote`) is what `chrome://inspect` uses. Pointing the MCP at it (`adb forward` + `--browserUrl` / `--wsEndpoint=ws://127.0.0.1:<port>/devtools/browser`) completes the WebSocket upgrade, then Puppeteer dies: Lumen stub-acks `Target.getBrowserContexts` with `{}`, and Puppeteer throws `contextIds is not iterable`. MCP tools also have no Fetch / Local Overrides / `Lumen.addMockRule` surface.
+
+To drive Lumen without clicking Inspect, speak CDP on the forwarded socket (or the sidecar loopback `127.0.0.1:18789`): `Network.enable`, `Log.enable`, `Fetch.*`, `Lumen.addMockRule`. There is no dedicated Lumen MCP yet.
 
 ## What v1 covers
 
@@ -142,7 +160,8 @@ Only **OkHttp** is woven. HttpURLConnection, Cronet, and Socket.IO still on HTTP
 
 | Topic | What happens |
 |---|---|
-| DevTools **Reconnect** after the process dies | Close the window and inspect again. Or run `./scripts/lumen-proxy.sh start` first so the same window stays up |
+| DevTools **Reconnect** after the process dies | Empty frontend. Run `./scripts/lumen-proxy.sh start` **before** the first Inspect so the same window survives restarts |
+| Chrome DevTools MCP | Desktop Chrome (or Chrome-on-Android). Not Lumen's inspect socket; no mock-override tool |
 | Network panel **Clear** | Same as inspecting a web page: cleared rows (including a still-open socket) do not come back. New HTTP / a **new** WebSocket will. On-disk archive is unchanged |
 | Messages looks like one row overwritten by `3` | Short grid + autoscroll to the latest Engine.IO pong. Scroll up for history |
 | Page screencast | `Page.startScreencast` is a no-op |
