@@ -109,6 +109,7 @@ class LumenWebSocketListener(
   override fun onMessage(webSocket: WebSocket, text: String) {
     val id = resolveRequestId()
     ensureCreated()
+    store()?.network?.archiveWsFrame(id, outgoing = false, text = text)
     if (eventReporter.isEnabled) {
       val n = framesPushed.incrementAndGet()
       if (n <= 8 || n % 25 == 0) {
@@ -119,19 +120,19 @@ class LumenWebSocketListener(
         SimpleTextInspectorWebSocketFrame(id, LumenWebSocketReporter.clipText(text)),
       )
     }
-    store()?.network?.archiveWsFrame(id, outgoing = false, text = text)
     delegate.onMessage(wrapOutbound(webSocket), text)
   }
 
   override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
     val id = resolveRequestId()
     ensureCreated()
+    val payload = bytes.toByteArray()
+    store()?.network?.archiveWsFrame(id, outgoing = false, binary = payload)
     if (eventReporter.isEnabled) {
       eventReporter.webSocketFrameReceived(
-        SimpleBinaryInspectorWebSocketFrame(id, LumenWebSocketReporter.clipBytes(bytes.toByteArray())),
+        SimpleBinaryInspectorWebSocketFrame(id, LumenWebSocketReporter.clipBytes(payload)),
       )
     }
-    store()?.network?.archiveWsFrame(id, outgoing = false, binary = bytes.toByteArray())
     delegate.onMessage(wrapOutbound(webSocket), bytes)
   }
 
@@ -245,23 +246,23 @@ object LumenWebSocketReporter {
 
   @JvmStatic
   fun frameSentText(requestId: String, text: String) {
-    if (eventReporter.isEnabled) {
-      eventReporter.webSocketFrameSent(SimpleTextInspectorWebSocketFrame(requestId, clipText(text)))
-    }
     if (LumenAgent.isStarted()) {
       LumenAgent.store?.network?.archiveWsFrame(requestId, outgoing = true, text = text)
+    }
+    if (eventReporter.isEnabled) {
+      eventReporter.webSocketFrameSent(SimpleTextInspectorWebSocketFrame(requestId, clipText(text)))
     }
   }
 
   @JvmStatic
   fun frameSentBinary(requestId: String, payload: ByteArray) {
+    if (LumenAgent.isStarted()) {
+      LumenAgent.store?.network?.archiveWsFrame(requestId, outgoing = true, binary = payload)
+    }
     if (eventReporter.isEnabled) {
       eventReporter.webSocketFrameSent(
         SimpleBinaryInspectorWebSocketFrame(requestId, clipBytes(payload)),
       )
-    }
-    if (LumenAgent.isStarted()) {
-      LumenAgent.store?.network?.archiveWsFrame(requestId, outgoing = true, binary = payload)
     }
   }
 

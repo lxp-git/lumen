@@ -7,6 +7,7 @@ import dev.lumen.inspector.jsonrpc.JsonRpcPeer
 import dev.lumen.inspector.jsonrpc.JsonRpcResult
 import dev.lumen.inspector.jsonrpc.protocol.JsonRpcError
 import dev.lumen.inspector.network.NetworkPeerManager
+import dev.lumen.inspector.network.WsFrameNetworkRows
 import dev.lumen.inspector.protocol.ChromeDevtoolsDomain
 import dev.lumen.inspector.protocol.ChromeDevtoolsMethod
 import dev.lumen.json.annotation.JsonProperty
@@ -106,6 +107,12 @@ class Network(
   @ChromeDevtoolsMethod
   fun getResponseBody(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
     val requestId = params?.optString("requestId").orEmpty()
+    transcriptBody(requestId)?.let { payload ->
+      return GetResponseBodyResponse().also {
+        it.body = payload
+        it.base64Encoded = false
+      }
+    }
     // Prefer EventStore; fall back to legacy temp files; never throw — Chrome's
     // Network panel calls this optimistically and a JSON-RPC error is noisy.
     store.network.readBody(requestId)?.let { body ->
@@ -151,7 +158,14 @@ class Network(
     return result
   }
 
+  private fun transcriptBody(requestId: String): String? {
+    val parentId = WsFrameNetworkRows.parentRequestId(requestId) ?: return null
+    val record = store.network.get(parentId) ?: return null
+    return WsFrameNetworkRows.buildTranscript(record).takeIf { it.isNotEmpty() }
+  }
+
   private fun collectSearchableText(requestId: String): String {
+    transcriptBody(requestId)?.let { return it }
     val record = store.network.get(requestId)
     val chunks = ArrayList<String>()
     store.network.readBody(requestId)?.let { (body, base64) ->
@@ -323,6 +337,7 @@ class Network(
         }
         peer.invokeMethod(method, params, null)
       }
+      emitTranscriptRow(peer, record)
     } else if (record.wsFrameCount > 0) {
       peer.invokeMethod(
         "Network.webSocketFrameReceived",
@@ -359,6 +374,17 @@ class Network(
         null,
       )
     }
+  }
+
+  /**
+   * Chrome Search skips WebSocket bodies (`isTextType == false`). One XHR per
+   * socket holds the frame transcript so Search / Response still work.
+   */
+  private fun emitTranscriptRow(peer: JsonRpcPeer, record: NetworkRecord) {
+    val ts = record.wsFrames.firstOrNull { frame ->
+      WsFrameNetworkRows.shouldIndex(frame.opcode, frame.binary, frame.payload)
+    }?.timestampMonoMs?.div(1000.0) ?: (record.startedAtMonotonicMs / 1000.0)
+    WsFrameNetworkRows.emit(peer, record, ts)
   }
 
   private fun emitRequestWillBeSent(peer: JsonRpcPeer, record: NetworkRecord) {

@@ -55,6 +55,13 @@ public class JsonRpcPeer {
   @GuardedBy("this")
   private final Set<String> mWsCreatedIds = new HashSet<>();
 
+  /**
+   * Synthetic transcript XHR rows already advertised on this peer. A second
+   * {@code requestWillBeSent} would draw another Network row for the same socket.
+   */
+  @GuardedBy("this")
+  private final Set<String> mWsTranscriptIds = new HashSet<>();
+
   private final DisconnectObservable mDisconnectObservable = new DisconnectObservable();
 
   public JsonRpcPeer(ObjectMapper objectMapper, SimpleSession peer) {
@@ -102,6 +109,14 @@ public class JsonRpcPeer {
    */
   public synchronized boolean markWsCreated(String requestId) {
     return mWsCreatedIds.add(requestId);
+  }
+
+  /**
+   * @return true if this is the first WebSocket transcript XHR for {@code requestId}
+   *     on this peer.
+   */
+  public synchronized boolean markWsTranscript(String requestId) {
+    return mWsTranscriptIds.add(requestId);
   }
 
   public void invokeMethod(String method, Object paramsObject,

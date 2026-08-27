@@ -440,6 +440,7 @@ public class NetworkEventReporterImpl implements NetworkEventReporter {
     if (peerManager != null) {
       peerManager.sendNotificationToPeers("Network.webSocketFrameSent", jsonFrameEvent(frame));
     }
+    WsFrameNetworkRows.emitLive(frame.requestId(), frame.payloadData(), frame.opcode());
   }
 
   @Override
@@ -449,6 +450,7 @@ public class NetworkEventReporterImpl implements NetworkEventReporter {
       peerManager.sendNotificationToPeers(
           "Network.webSocketFrameReceived", jsonFrameEvent(frame));
     }
+    WsFrameNetworkRows.emitLive(frame.requestId(), frame.payloadData(), frame.opcode());
   }
 
   /**
