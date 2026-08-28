@@ -466,15 +466,29 @@ class Network(
     if (record.isWebSocket || record.resourceType.equals("WebSocket", ignoreCase = true)) {
       return Page.ResourceType.WEBSOCKET
     }
-    return try {
-      Page.ResourceType.valueOf(record.resourceType.uppercase())
-    } catch (_: Exception) {
-      when {
-        record.mimeType?.startsWith("image/") == true -> Page.ResourceType.IMAGE
-        record.mimeType?.contains("json") == true -> Page.ResourceType.XHR
-        record.mimeType?.startsWith("text/") == true -> Page.ResourceType.DOCUMENT
-        else -> Page.ResourceType.OTHER
+    // Archived rows default to "Other". Chrome Search only calls
+    // searchInResponseBody when isTextType is true (XHR/Fetch/Document/…),
+    // so a JSON body typed Other is invisible to Ctrl+F even though
+    // the CDP method itself works.
+    val stored = record.resourceType
+    if (stored.isNotBlank() && !stored.equals("Other", ignoreCase = true)) {
+      try {
+        return Page.ResourceType.valueOf(stored.uppercase())
+      } catch (_: Exception) {
       }
+    }
+    return mimeResourceType(record.mimeType)
+  }
+
+  private fun mimeResourceType(mimeType: String?): Page.ResourceType {
+    val mime = mimeType?.substringBefore(';')?.trim()?.lowercase() ?: return Page.ResourceType.OTHER
+    return when {
+      mime.startsWith("image/") -> Page.ResourceType.IMAGE
+      mime == "application/json" || mime.endsWith("+json") -> Page.ResourceType.XHR
+      mime == "text/javascript" || mime == "application/javascript" ||
+        mime == "application/x-javascript" -> Page.ResourceType.SCRIPT
+      mime.startsWith("text/") -> Page.ResourceType.DOCUMENT
+      else -> Page.ResourceType.OTHER
     }
   }
 
