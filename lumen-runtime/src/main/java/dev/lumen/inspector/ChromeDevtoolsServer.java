@@ -186,7 +186,7 @@ public class ChromeDevtoolsServer implements SimpleEndpoint {
         jsonObject = mObjectMapper.convertValue(response, JSONObject.class);
         responseString = jsonObject.toString();
       }
-      peer.getWebSocket().sendText(responseString);
+      peer.getWebSocket().sendTextImmediate(responseString);
     }
   }
 

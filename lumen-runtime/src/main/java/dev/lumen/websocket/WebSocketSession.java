@@ -57,12 +57,17 @@ class WebSocketSession implements SimpleSession {
 
   @Override
   public void sendText(String payload) {
-    doWrite(FrameHelper.createTextFrame(payload));
+    doWrite(FrameHelper.createTextFrame(payload), false);
+  }
+
+  @Override
+  public void sendTextImmediate(String payload) {
+    doWrite(FrameHelper.createTextFrame(payload), true);
   }
 
   @Override
   public void sendBinary(byte[] payload) {
-    doWrite(FrameHelper.createBinaryFrame(payload));
+    doWrite(FrameHelper.createBinaryFrame(payload), false);
   }
 
   @Override
@@ -98,10 +103,18 @@ class WebSocketSession implements SimpleSession {
   }
 
   private void doWrite(Frame frame) {
+    doWrite(frame, false);
+  }
+
+  private void doWrite(Frame frame, boolean immediate) {
     if (signalErrorIfNotOpen()) {
       return;
     }
-    mWriteHandler.write(frame, mErrorForwardingWriteCallback);
+    if (immediate) {
+      mWriteHandler.writeImmediate(frame, mErrorForwardingWriteCallback);
+    } else {
+      mWriteHandler.write(frame, mErrorForwardingWriteCallback);
+    }
   }
 
   /**

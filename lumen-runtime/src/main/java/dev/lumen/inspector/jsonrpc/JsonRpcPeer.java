@@ -146,7 +146,42 @@ public class JsonRpcPeer {
           : requestString;
       LogRedirector.i(TAG, "out " + preview);
     }
-    mPeer.sendText(requestString);
+    boolean immediate = callback != null || isRowCreatingNetworkEvent(method);
+    sendEncoded(requestString, immediate);
+  }
+
+  /**
+   * Queue a notification on the immediate lane. Used when a JSON-RPC reply
+   * must not overtake a domain event flushed in the same dispatch.
+   */
+  public void invokeMethodImmediate(String method, Object paramsObject)
+      throws NotYetConnectedException {
+    Util.throwIfNull(method);
+    JSONObject params = mObjectMapper.convertValue(paramsObject, JSONObject.class);
+    JsonRpcRequest message = new JsonRpcRequest(null, method, params);
+    JSONObject jsonObject = mObjectMapper.convertValue(message, JSONObject.class);
+    String sessionId = getSessionId();
+    if (sessionId != null && !method.startsWith("Target.")) {
+      try {
+        jsonObject.put("sessionId", sessionId);
+      } catch (org.json.JSONException e) {
+        throw new RuntimeException(e);
+      }
+    }
+    sendEncoded(jsonObject.toString(), true);
+  }
+
+  private void sendEncoded(String requestString, boolean immediate) {
+    if (immediate) {
+      mPeer.sendTextImmediate(requestString);
+    } else {
+      mPeer.sendText(requestString);
+    }
+  }
+
+  private static boolean isRowCreatingNetworkEvent(String method) {
+    return "Network.requestWillBeSent".equals(method)
+        || "Network.webSocketCreated".equals(method);
   }
 
   public void registerDisconnectReceiver(DisconnectReceiver callback) {

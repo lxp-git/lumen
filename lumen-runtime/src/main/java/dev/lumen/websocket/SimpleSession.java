@@ -12,6 +12,15 @@ package dev.lumen.websocket;
  */
 public interface SimpleSession {
   void sendText(String payload);
+
+  /**
+   * Send a text frame now, bypassing the writer's coalescing window.
+   * JSON-RPC responses use this so Chrome's request/response stays snappy.
+   */
+  default void sendTextImmediate(String payload) {
+    sendText(payload);
+  }
+
   void sendBinary(byte[] payload);
 
   /**
