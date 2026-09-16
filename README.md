@@ -7,7 +7,7 @@ OkHttp and logcat are recorded from **process start**. Attach later and Network 
 ```kotlin
 plugins {
   id("com.android.application")
-  id("io.github.lxp-git.lumen") version "0.2.1"
+  id("io.github.lxp-git.lumen") version "0.3.0"
 }
 ```
 
