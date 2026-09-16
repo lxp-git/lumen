@@ -14,18 +14,28 @@ import dev.lumen.inspector.console.CLog;
 import dev.lumen.inspector.helper.ChromePeerManager;
 import dev.lumen.inspector.helper.PeerRegistrationListener;
 import dev.lumen.inspector.helper.PeersRegisteredListener;
+import dev.lumen.inspector.kv.KvCatalog;
+import dev.lumen.inspector.kv.KvEntry;
+import dev.lumen.inspector.kv.KvIds;
 import dev.lumen.inspector.protocol.module.Console;
 import dev.lumen.inspector.protocol.module.DOMStorage;
+import dev.lumen.inspector.protocol.module.Storage;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public class DOMStoragePeerManager extends ChromePeerManager {
+  private static final long KV_POLL_MS = 1000L;
+
   private final Context mContext;
+  private volatile boolean mKvPoll;
+  private volatile int mKvGeneration;
+  private Thread mKvPoller;
 
   public DOMStoragePeerManager(Context context) {
     mContext = context;
@@ -82,10 +92,12 @@ public class DOMStoragePeerManager extends ChromePeerManager {
         prefs.registerOnSharedPreferenceChangeListener(listener);
         mPrefsListeners.add(listener);
       }
+      startKvPoller();
     }
 
     @Override
     protected synchronized void onLastPeerUnregistered() {
+      stopKvPoller();
       for (DevToolsSharedPreferencesListener prefsListener : mPrefsListeners) {
         prefsListener.unregister();
       }
@@ -93,9 +105,81 @@ public class DOMStoragePeerManager extends ChromePeerManager {
     }
   };
 
+  private void startKvPoller() {
+    mKvPoll = true;
+    final int generation = ++mKvGeneration;
+    Thread t = new Thread(() -> pollDataStoreAndMmkv(generation), "lumen-kv-poll");
+    mKvPoller = t;
+    t.setDaemon(true);
+    t.start();
+  }
+
+  private void stopKvPoller() {
+    mKvPoll = false;
+    mKvGeneration++;
+    Thread t = mKvPoller;
+    mKvPoller = null;
+    if (t != null) {
+      t.interrupt();
+    }
+  }
+
+  private void pollDataStoreAndMmkv(int generation) {
+    Map<String, String> prev = snapshotDataStoreAndMmkv();
+    while (mKvPoll && generation == mKvGeneration) {
+      try {
+        Thread.sleep(KV_POLL_MS);
+      } catch (InterruptedException e) {
+        return;
+      }
+      if (!mKvPoll || generation != mKvGeneration) {
+        return;
+      }
+      Map<String, String> next = snapshotDataStoreAndMmkv();
+      emitKvDiff(prev, next);
+      prev = next;
+    }
+  }
+
+  private Map<String, String> snapshotDataStoreAndMmkv() {
+    KvCatalog catalog = new KvCatalog(mContext);
+    Map<String, String> out = new LinkedHashMap<String, String>();
+    for (KvIds.StoreRef store : catalog.listStores()) {
+      if (store.getKind() == KvIds.Kind.SHARED_PREFERENCES) {
+        continue;
+      }
+      for (KvEntry entry : catalog.entries(store)) {
+        out.put(
+            KvIds.combinedKey(store.getKind(), store.getName(), entry.getKey()),
+            entry.getDisplayValue());
+      }
+    }
+    return out;
+  }
+
+  private void emitKvDiff(Map<String, String> prev, Map<String, String> next) {
+    DOMStorage.StorageId storageId = new DOMStorage.StorageId();
+    storageId.storageKey = Storage.DEFAULT_STORAGE_KEY;
+    storageId.isLocalStorage = true;
+    for (Map.Entry<String, String> e : prev.entrySet()) {
+      if (!next.containsKey(e.getKey())) {
+        signalItemRemoved(storageId, e.getKey());
+      }
+    }
+    for (Map.Entry<String, String> e : next.entrySet()) {
+      String oldValue = prev.get(e.getKey());
+      if (oldValue == null) {
+        signalItemAdded(storageId, e.getKey(), e.getValue());
+      } else if (!oldValue.equals(e.getValue())) {
+        signalItemUpdated(storageId, e.getKey(), oldValue, e.getValue());
+      }
+    }
+  }
+
   private class DevToolsSharedPreferencesListener
       implements SharedPreferences.OnSharedPreferenceChangeListener {
     private final SharedPreferences mPrefs;
+    private final String mTag;
     private final DOMStorage.StorageId mStorageId;
 
     /**
@@ -108,8 +192,10 @@ public class DOMStoragePeerManager extends ChromePeerManager {
 
     public DevToolsSharedPreferencesListener(SharedPreferences prefs, String tag) {
       mPrefs = prefs;
+      mTag = tag;
       mStorageId = new DOMStorage.StorageId();
-      mStorageId.securityOrigin = tag;
+      // storageKey = lumen-default so events match getDOMStorageItems.
+      mStorageId.storageKey = Storage.DEFAULT_STORAGE_KEY;
       mStorageId.isLocalStorage = true;
       mCopy = prefsCopy(prefs.getAll());
     }
@@ -120,24 +206,36 @@ public class DOMStoragePeerManager extends ChromePeerManager {
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+      if (key == null) {
+        LogUtil.i("Detected SharedPreferences clear of %s", mTag);
+        ArrayList<String> gone = new ArrayList<String>(mCopy.keySet());
+        for (String k : gone) {
+          signalItemRemoved(
+              mStorageId,
+              KvIds.combinedKey(KvIds.Kind.SHARED_PREFERENCES, mTag, k));
+        }
+        mCopy.clear();
+        return;
+      }
       Map<String, ?> entries = sharedPreferences.getAll();
       boolean existedBefore = mCopy.containsKey(key);
       boolean existsNow = entries.containsKey(key);
       Object newValue = existsNow ? entries.get(key) : null;
+      String displayKey = KvIds.combinedKey(KvIds.Kind.SHARED_PREFERENCES, mTag, key);
       if (existedBefore && existsNow) {
         signalItemUpdated(
             mStorageId,
-            key,
+            displayKey,
             SharedPreferencesHelper.valueToString(mCopy.get(key)),
             SharedPreferencesHelper.valueToString(newValue));
         mCopy.put(key, newValue);
       } else if (existedBefore) {
-        signalItemRemoved(mStorageId, key);
+        signalItemRemoved(mStorageId, displayKey);
         mCopy.remove(key);
       } else if (existsNow) {
         signalItemAdded(
             mStorageId,
-            key,
+            displayKey,
             SharedPreferencesHelper.valueToString(newValue));
         mCopy.put(key, newValue);
       } else {

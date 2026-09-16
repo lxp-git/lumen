@@ -46,6 +46,7 @@ import dev.lumen.inspector.protocol.module.DatabaseConstants;
 import dev.lumen.inspector.protocol.module.DatabaseDriver2;
 import dev.lumen.inspector.protocol.module.Debugger;
 import dev.lumen.inspector.protocol.module.HeapProfiler;
+import dev.lumen.inspector.protocol.module.IndexedDB;
 import dev.lumen.inspector.protocol.module.Inspector;
 import dev.lumen.inspector.protocol.module.Browser;
 import dev.lumen.inspector.protocol.module.Network;
@@ -380,6 +381,7 @@ public class Lumen {
         provideIfDesired(new CSS(document));
       }
       provideIfDesired(new DOMStorage(mContext));
+      provideIfDesired(new IndexedDB(mContext));
       provideIfDesired(new HeapProfiler());
       provideIfDesired(new Inspector());
       // Prefer LumenAgent for production wiring. This builder path remains for

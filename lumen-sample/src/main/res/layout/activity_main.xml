@@ -37,6 +37,12 @@
         android:layout_height="wrap_content"
         android:text="Open echo WebSocket" />
 
+    <Button
+        android:id="@+id/btn_kv"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Seed SharedPreferences / DataStore / MMKV" />
+
     <TextView
         android:id="@+id/output"
         android:layout_width="match_parent"

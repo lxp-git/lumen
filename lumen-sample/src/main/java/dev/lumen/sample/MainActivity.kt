@@ -1,10 +1,19 @@
 package dev.lumen.sample
 
+import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import com.tencent.mmkv.MMKV
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -12,6 +21,8 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+
+private val Context.sampleDataStore by preferencesDataStore(name = "lumen_sample")
 
 /**
  * Intentionally no Lumen.* / Stetho.* calls.
@@ -43,6 +54,12 @@ class MainActivity : AppCompatActivity() {
       false
     }
     status.text = "Lumen agent started=$agentStarted · open chrome://inspect"
+
+    seedKvStores()
+    findViewById<Button>(R.id.btn_kv).setOnClickListener {
+      seedKvStores()
+      output.text = "Seeded SharedPreferences / DataStore / MMKV\n" + output.text
+    }
 
     findViewById<Button>(R.id.btn_request).setOnClickListener {
       executor.execute {
@@ -134,5 +151,33 @@ class MainActivity : AppCompatActivity() {
   override fun onDestroy() {
     activeSocket?.cancel()
     super.onDestroy()
+  }
+
+  /**
+   * Values show up in Chrome Application → IndexedDB
+   * (`SharedPreferences` / `DataStore` / `MMKV`) and Local Storage.
+   */
+  private fun seedKvStores() {
+    getSharedPreferences("lumen_sample", Context.MODE_PRIVATE).edit()
+      .putString("theme", "dark")
+      .putBoolean("onboarded", true)
+      .putInt("launch_count", 3)
+      .putStringSet("flags", setOf("beta", "inspect"))
+      .apply()
+
+    runBlocking {
+      sampleDataStore.edit { prefs ->
+        prefs[stringPreferencesKey("display_name")] = "Lumen sample"
+        prefs[booleanPreferencesKey("analytics")] = false
+        prefs[intPreferencesKey("session")] = 42
+        prefs[stringSetPreferencesKey("tags")] = setOf("kv", "datastore")
+      }
+    }
+
+    MMKV.initialize(this)
+    val kv = MMKV.defaultMMKV()
+    kv.encode("token", "sample-token")
+    kv.encode("retry", 2)
+    kv.encode("ok", true)
   }
 }

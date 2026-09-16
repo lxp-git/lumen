@@ -24,6 +24,7 @@ import dev.lumen.inspector.protocol.module.DatabaseConstants
 import dev.lumen.inspector.protocol.module.Debugger
 import dev.lumen.inspector.protocol.module.Fetch
 import dev.lumen.inspector.protocol.module.HeapProfiler
+import dev.lumen.inspector.protocol.module.IndexedDB
 import dev.lumen.inspector.protocol.module.IO
 import dev.lumen.inspector.protocol.module.Inspector
 import dev.lumen.inspector.protocol.module.Log
@@ -139,6 +140,7 @@ object LumenAgent {
     }
 
     modules.add(DOMStorage(context))
+    modules.add(IndexedDB(context))
     modules.add(HeapProfiler())
     modules.add(Inspector())
     modules.add(Log(eventStore))

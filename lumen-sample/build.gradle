@@ -48,4 +48,6 @@ dependencies {
     // OkHttp is the app's HTTP stack. lumen-okhttp is added by the plugin on debug.
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation "com.squareup.okhttp3:okhttp:${rootProject.ext.okhttpVersion}"
+    implementation 'androidx.datastore:datastore-preferences:1.1.1'
+    implementation 'com.tencent:mmkv:1.3.14'
 }

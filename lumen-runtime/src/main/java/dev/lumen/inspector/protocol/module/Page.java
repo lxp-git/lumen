@@ -10,7 +10,7 @@ package dev.lumen.inspector.protocol.module;
 import android.content.Context;
 
 import dev.lumen.common.ProcessUtil;
-import dev.lumen.inspector.domstorage.SharedPreferencesHelper;
+
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer;
 import dev.lumen.inspector.jsonrpc.JsonRpcResult;
 import dev.lumen.inspector.protocol.ChromeDevtoolsDomain;
@@ -22,9 +22,7 @@ import dev.lumen.json.annotation.JsonValue;
 
 import org.json.JSONObject;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 
 import androidx.annotation.Nullable;
@@ -80,31 +78,15 @@ public class Page implements ChromeDevtoolsDomain {
   // Dog science...
   @ChromeDevtoolsMethod
   public JsonRpcResult getResourceTree(JsonRpcPeer peer, JSONObject params) {
-    // The DOMStorage module expects one key/value store per "security origin" which has a 1:1
-    // relationship with resource tree frames.
-    List<String> prefsTags = SharedPreferencesHelper.getSharedPreferenceTags(mContext);
-    Iterator<String> prefsTagsIter = prefsTags.iterator();
-
+    // One lumen:// frame so storageKey matches getStorageKeyForFrame.
+    String process = ProcessUtil.getProcessName();
+    String url = "lumen://" + process;
     FrameResourceTree tree = createSimpleFrameResourceTree(
         "1",
         null /* parentId */,
         "Lumen",
-        prefsTagsIter.hasNext() ? prefsTagsIter.next() : "");
-    if (tree.childFrames == null) {
-      tree.childFrames = new ArrayList<FrameResourceTree>();
-    }
-
-    int nextChildFrameId = 1;
-    while (prefsTagsIter.hasNext()) {
-      String frameId = "1." + (nextChildFrameId++);
-      String prefsTag = prefsTagsIter.next();
-      FrameResourceTree child = createSimpleFrameResourceTree(
-          frameId,
-          "1",
-          "Child #" + frameId,
-          prefsTag);
-      tree.childFrames.add(child);
-    }
+        url,
+        url);
 
     GetResourceTreeParams resultParams = new GetResourceTreeParams();
     resultParams.frameTree = tree;
@@ -115,13 +97,14 @@ public class Page implements ChromeDevtoolsDomain {
       String id,
       String parentId,
       String name,
-      String securityOrigin) {
+      String securityOrigin,
+      String url) {
     Frame frame = new Frame();
     frame.id = id;
     frame.parentId = parentId;
     frame.loaderId = "1";
     frame.name = name;
-    frame.url = "";
+    frame.url = url;
     frame.securityOrigin = securityOrigin;
     frame.mimeType = "text/plain";
     FrameResourceTree tree = new FrameResourceTree();
