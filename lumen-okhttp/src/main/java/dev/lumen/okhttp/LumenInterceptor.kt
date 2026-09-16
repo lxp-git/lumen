@@ -3,6 +3,7 @@ package dev.lumen.okhttp
 import android.os.SystemClock
 import dev.lumen.LumenAgent
 import dev.lumen.inspector.network.DefaultResponseHandler
+import dev.lumen.inspector.network.EngineIoPolling
 import dev.lumen.inspector.network.NetworkEventReporter
 import dev.lumen.inspector.network.NetworkEventReporterImpl
 import dev.lumen.inspector.network.RequestBodyHelper
@@ -47,7 +48,12 @@ class LumenInterceptor : Interceptor {
     var request = chain.request()
 
     val headers = headersToMap(request.headers)
-    val postData = peekRequestBody(request)
+    val url = request.url.toString()
+    val isPollingUrl = EngineIoPolling.isPollingUrl(url)
+    val postData = peekRequestBody(
+      request,
+      if (isPollingUrl) MAX_POLLING_PEEK_BODY_BYTES else MAX_PEEK_BODY_BYTES,
+    )
 
     val store = if (LumenAgent.isStarted()) LumenAgent.store else null
     val mockEngine = if (LumenAgent.isStarted()) LumenAgent.mockEngine else null
@@ -58,10 +64,14 @@ class LumenInterceptor : Interceptor {
       request.header("Upgrade")?.equals("websocket", ignoreCase = true) == true ||
         scheme.equals("ws", ignoreCase = true) ||
         scheme.equals("wss", ignoreCase = true)
+    val isPolling = !isWebSocketUpgrade && isPollingUrl
 
     if (isWebSocketUpgrade) {
       // Correlate the HTTP upgrade row with LumenWebSocketListener frame events.
       LumenWebSocketListener.rememberUpgrade(request.url.toString(), requestId)
+    }
+    if (isPolling) {
+      EngineIoPolling.captureOutgoing(url, postData)
     }
 
     store?.network?.put(
@@ -108,7 +118,7 @@ class LumenInterceptor : Interceptor {
         .apply { rule.headers.forEach { (k, v) -> header(k, v) } }
         .build()
       pushSyntheticResponse(requestId, request, response, bodyBytes)
-      return response
+      return watchPollingBody(isPolling, request.url.toString(), response)
     }
 
     if (mockEngine != null &&
@@ -139,7 +149,7 @@ class LumenInterceptor : Interceptor {
             .apply { decision.responseHeaders.forEach { (k, v) -> addHeader(k, v) } }
             .build()
           pushSyntheticResponse(requestId, request, response, decision.body)
-          return response
+          return watchPollingBody(isPolling, request.url.toString(), response)
         }
         is MockEngine.Decision.Fail -> {
           store?.network?.update(requestId) {
@@ -245,7 +255,7 @@ class LumenInterceptor : Interceptor {
             .apply { decision.responseHeaders.forEach { (k, v) -> addHeader(k, v) } }
             .build()
           pushSyntheticResponse(requestId, request, overridden, decision.body)
-          return overridden
+          return watchPollingBody(isPolling, request.url.toString(), overridden)
         }
         is MockEngine.Decision.Fail -> {
           store?.network?.update(requestId) {
@@ -337,8 +347,13 @@ class LumenInterceptor : Interceptor {
     )
 
     if (responseStream != null) {
+      val appStream = if (isPolling) {
+        EngineIoPolling.wrapIncoming(request.url.toString(), responseStream)
+      } else {
+        responseStream
+      }
       return response.newBuilder()
-        .body(ForwardingResponseBody(body, responseStream))
+        .body(ForwardingResponseBody(body, appStream))
         .build()
     }
 
@@ -346,6 +361,19 @@ class LumenInterceptor : Interceptor {
       it.finishedAtMs = System.currentTimeMillis()
     }
     return response
+  }
+
+  private fun watchPollingBody(
+    isPolling: Boolean,
+    url: String,
+    response: Response,
+  ): Response {
+    if (!isPolling) return response
+    val body = response.body ?: return response
+    val watched = EngineIoPolling.wrapIncoming(url, body.byteStream())
+    return response.newBuilder()
+      .body(ForwardingResponseBody(body, watched))
+      .build()
   }
 
   private fun finishMocked(
@@ -405,7 +433,7 @@ class LumenInterceptor : Interceptor {
     return out
   }
 
-  private fun peekRequestBody(request: Request): String? {
+  private fun peekRequestBody(request: Request, maxBytes: Long = MAX_PEEK_BODY_BYTES): String? {
     val body = request.body ?: return null
     // One-shot/duplex bodies may only be consumed once — peeking here would
     // corrupt the real send. (Reflection-free probe; the methods are missing on
@@ -422,11 +450,11 @@ class LumenInterceptor : Interceptor {
     } catch (_: IOException) {
       return null
     }
-    if (contentLength < 0 || contentLength > MAX_PEEK_BODY_BYTES) return null
+    if (contentLength < 0 || contentLength > maxBytes) return null
     return try {
       val buffer = Buffer()
       body.writeTo(buffer)
-      buffer.readString(minOf(buffer.size, MAX_PEEK_BODY_BYTES), Charsets.UTF_8)
+      buffer.readString(minOf(buffer.size, maxBytes), Charsets.UTF_8)
     } catch (_: Exception) {
       null
     }
@@ -434,6 +462,8 @@ class LumenInterceptor : Interceptor {
 
   private companion object {
     const val MAX_PEEK_BODY_BYTES = 64_000L
+    /** Match EngineIoPolling.wrapIncoming so batched polling POSTs are not dropped. */
+    const val MAX_POLLING_PEEK_BODY_BYTES = 512L * 1024L
   }
 
   private class OkHttpInspectorRequest(
