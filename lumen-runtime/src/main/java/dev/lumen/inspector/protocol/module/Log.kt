@@ -1,5 +1,6 @@
 package dev.lumen.inspector.protocol.module
 
+import dev.lumen.common.LogRedirector
 import dev.lumen.inspector.helper.ChromePeerManager
 import dev.lumen.inspector.helper.PeerRegistrationListener
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer
@@ -7,35 +8,41 @@ import dev.lumen.inspector.protocol.ChromeDevtoolsDomain
 import dev.lumen.inspector.protocol.ChromeDevtoolsMethod
 import dev.lumen.store.EventStore
 import dev.lumen.store.LogArchive
-import dev.lumen.store.LogCatLine
 import dev.lumen.store.LogEntry
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
-/**
- * CDP Log domain backed by [EventStore.logs]. Replays a Console-safe page on enable,
- * then streams live lines while the active segment is "latest". Every logcat
- * priority (V/D/I/W/E) is forwarded; Android `D`/`V` are promoted to CDP `info`
- * because Chrome's Default levels hide `verbose`.
- *
- * Segment switches (notification or `Lumen.setActiveLogSegment`) first emit a
- * `Runtime.consoleAPICalled` of type `clear` so Chrome Console replaces the page
- * instead of stacking another 5k lines.
- */
+/** CDP Log domain: pack live lines so Console is not one event per logcat row. */
 class Log(
   private val store: EventStore,
 ) : ChromeDevtoolsDomain {
 
   private val peers = ChromePeerManager()
+  private val flushLock = Any()
+  private val pending = ArrayList<LogEntry>()
+  private var flushScheduled = false
+  private var flushTask: ScheduledFuture<*>? = null
+  private var epoch = 0
+
+  private val flusher: ScheduledExecutorService =
+    Executors.newSingleThreadScheduledExecutor { runnable ->
+      Thread(runnable, "lumen-log-cdp").apply { isDaemon = true }
+    }
 
   private val logListener = object : LogArchive.Listener {
     override fun onLogEntry(entry: LogEntry) {
       if (peers.hasRegisteredPeers() && store.logs.activeSegmentId == null) {
-        peers.sendNotificationToPeers("Log.entryAdded", entryAddedParams(entry))
+        enqueueLive(entry)
       }
     }
 
     override fun onSegmentChanged(segmentId: String?) {
+      clearPending()
       if (!peers.hasRegisteredPeers()) return
       emitClear()
       replayToPeers()
@@ -49,7 +56,9 @@ class Log(
         replayPage(peer)
       }
 
-      override fun onPeerUnregistered(peer: JsonRpcPeer) {}
+      override fun onPeerUnregistered(peer: JsonRpcPeer) {
+        if (!peers.hasRegisteredPeers()) clearPending()
+      }
     })
     store.logs.addListener(logListener)
   }
@@ -61,23 +70,102 @@ class Log(
 
   @ChromeDevtoolsMethod
   fun disable(peer: JsonRpcPeer, params: JSONObject?) {
+    // Immediate so the JSON-RPC disable ack cannot overtake this batch.
+    flushPending(immediate = true)
     peers.removePeer(peer)
   }
 
   @ChromeDevtoolsMethod
   fun clear(peer: JsonRpcPeer, params: JSONObject?) {
+    clearPending()
     store.logs.clearAll()
   }
 
+  private fun enqueueLive(entry: LogEntry) {
+    var flushNow = false
+    synchronized(flushLock) {
+      pending.add(entry)
+      if (!flushScheduled) {
+        try {
+          flushTask = flusher.schedule(
+            { flushPending(immediate = false) },
+            LogBatches.FLUSH_WINDOW_MS,
+            TimeUnit.MILLISECONDS,
+          )
+          flushScheduled = true
+        } catch (_: RejectedExecutionException) {
+          flushNow = true
+        }
+      }
+    }
+    if (flushNow) flushPending(immediate = false)
+  }
+
+  private fun flushPending(immediate: Boolean) {
+    val batch: ArrayList<LogEntry>
+    val capturedEpoch: Int
+    synchronized(flushLock) {
+      flushScheduled = false
+      flushTask?.cancel(false)
+      flushTask = null
+      if (pending.isEmpty()) return
+      batch = ArrayList(pending)
+      pending.clear()
+      capturedEpoch = epoch
+    }
+    if (!stillLive(capturedEpoch)) return
+    emitPacked(batch) { packed ->
+      if (!stillLive(capturedEpoch)) return@emitPacked
+      val params = entryAddedParams(packed)
+      if (immediate) {
+        for (p in peers.copyReceivingPeers()) {
+          p.invokeMethodImmediate("Log.entryAdded", params)
+        }
+      } else {
+        peers.sendNotificationToPeers("Log.entryAdded", params)
+      }
+    }
+  }
+
+  private fun stillLive(capturedEpoch: Int): Boolean {
+    synchronized(flushLock) {
+      if (capturedEpoch != epoch) return false
+    }
+    return peers.hasRegisteredPeers() && store.logs.activeSegmentId == null
+  }
+
+  private fun clearPending() {
+    synchronized(flushLock) {
+      pending.clear()
+      epoch++
+      flushScheduled = false
+      flushTask?.cancel(false)
+      flushTask = null
+    }
+  }
+
   private fun replayPage(peer: JsonRpcPeer) {
-    for (entry in store.logs.pageForReplay()) {
-      peer.invokeMethod("Log.entryAdded", entryAddedParams(entry), null)
+    emitPacked(store.logs.pageForReplay()) { packed ->
+      peer.invokeMethod("Log.entryAdded", entryAddedParams(packed), null)
     }
   }
 
   private fun replayToPeers() {
-    for (entry in store.logs.pageForReplay()) {
-      peers.sendNotificationToPeers("Log.entryAdded", entryAddedParams(entry))
+    emitPacked(store.logs.pageForReplay()) { packed ->
+      peers.sendNotificationToPeers("Log.entryAdded", entryAddedParams(packed))
+    }
+  }
+
+  private inline fun emitPacked(
+    entries: List<LogEntry>,
+    send: (LogBatches.Packed) -> Unit,
+  ) {
+    for (packed in LogBatches.pack(entries)) {
+      try {
+        send(packed)
+      } catch (t: Throwable) {
+        LogRedirector.w(TAG, "failed to deliver packed log event", t)
+      }
     }
   }
 
@@ -92,21 +180,30 @@ class Log(
 
   private fun emitBanner(segmentId: String?) {
     val label = segmentId ?: "live"
-    val entry = LogEntry(
-      System.currentTimeMillis().toDouble(),
-      "info",
-      "─────── Lumen: viewing $label ───────",
-    )
-    peers.sendNotificationToPeers("Log.entryAdded", entryAddedParams(entry))
+    emitPacked(
+      listOf(
+        LogEntry(
+          System.currentTimeMillis().toDouble(),
+          "info",
+          "─────── Lumen: viewing $label ───────",
+        ),
+      ),
+    ) { packed ->
+      peers.sendNotificationToPeers("Log.entryAdded", entryAddedParams(packed))
+    }
   }
 
-  private fun entryAddedParams(entry: LogEntry): JSONObject =
+  private fun entryAddedParams(packed: LogBatches.Packed): JSONObject =
     JSONObject().put(
       "entry",
       JSONObject()
         .put("source", "other")
-        .put("level", LogCatLine.chromeLevel(entry.level))
-        .put("text", entry.text)
-        .put("timestamp", entry.timestampMs),
+        .put("level", packed.level)
+        .put("text", packed.text)
+        .put("timestamp", packed.timestampMs),
     )
+
+  private companion object {
+    const val TAG = "LumenLog"
+  }
 }
