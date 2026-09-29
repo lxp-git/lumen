@@ -10,6 +10,7 @@ import java.io.File
 import java.io.IOException
 import java.util.ArrayDeque
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
 
 /**
  * Process-lifetime ring of network exchanges plus durable metadata/body spill under
@@ -29,6 +30,17 @@ class NetworkArchive(
   private val metaFile = File(root, "session-${android.os.Process.myPid()}.jsonl")
 
   private val lock = Any()
+  private val bodyPrune = BodyPruneScheduler(
+    Executors.newSingleThreadExecutor { runnable ->
+      Thread(runnable, "lumen-body-prune").apply { isDaemon = true }
+    },
+  ) {
+    try {
+      BodyQuota.prune(bodiesDir, config.networkBodyQuotaBytes)
+    } catch (t: Throwable) {
+      LogRedirector.w(tag, "body prune failed", t)
+    }
+  }
   private val records = LinkedHashMap<String, NetworkRecord>()
   private val order = ArrayDeque<String>()
   private val listeners = CopyOnWriteArrayList<Listener>()
@@ -256,7 +268,7 @@ class NetworkArchive(
       override fun close() {
         super.close()
         update(requestId) { /* path already set */ }
-        pruneBodiesIfNeeded()
+        bodyPrune.request()
       }
     }
   }
@@ -444,16 +456,6 @@ class NetworkArchive(
       metaFile.appendText(line + "\n")
     } catch (e: IOException) {
       LogRedirector.w(tag, "meta append failed", e)
-    }
-  }
-
-  private fun pruneBodiesIfNeeded() {
-    val files = bodiesDir.listFiles()?.sortedBy { it.lastModified() } ?: return
-    var total = files.sumOf { it.length() }
-    for (f in files) {
-      if (total <= config.networkBodyQuotaBytes) break
-      total -= f.length()
-      f.delete()
     }
   }
 
