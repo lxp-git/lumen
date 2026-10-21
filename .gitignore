@@ -13,3 +13,4 @@ secring.gpg
 /lumen-chrome-extension/
 /scripts/lumen-forward.sh
 /scripts/push-lumen-maven.sh
+__pycache__/
