@@ -46,7 +46,6 @@ class LogArchive(
   private val segmentNamePattern = Regex("""spill-(\d+)\.jsonl""")
 
   fun addListener(listener: Listener) = listeners.add(listener)
-  fun removeListener(listener: Listener) = listeners.remove(listener)
 
   fun ensureStarted() {
     synchronized(this) {
@@ -64,8 +63,10 @@ class LogArchive(
         ),
       )
     }
-    pruneRetention()
-    thread(name = "Lumen-LogArchive", isDaemon = true) { pumpForever() }
+    thread(name = "Lumen-LogArchive", isDaemon = true) {
+      pruneRetention()
+      pumpForever()
+    }
   }
 
   fun listSegments(): List<LogSegmentInfo> = synchronized(lock) {

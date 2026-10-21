@@ -1,6 +1,5 @@
 package dev.lumen.inspector.protocol.module
 
-import android.content.Context
 import android.os.SystemClock
 import dev.lumen.inspector.jsonrpc.JsonRpcException
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer
@@ -13,6 +12,7 @@ import dev.lumen.inspector.protocol.ChromeDevtoolsMethod
 import dev.lumen.json.annotation.JsonProperty
 import dev.lumen.store.EventStore
 import dev.lumen.store.NetworkRecord
+import dev.lumen.store.WsFrame
 import org.json.JSONObject
 import java.io.IOException
 import java.util.regex.Pattern
@@ -25,12 +25,10 @@ import java.util.regex.PatternSyntaxException
  * and [dev.lumen.okhttp.LumenInterceptor]).
  */
 class Network(
-  context: Context,
   private val store: EventStore,
 ) : ChromeDevtoolsDomain {
 
-  private val peerManager: NetworkPeerManager =
-    NetworkPeerManager.getOrCreateInstance(context)
+  private val peerManager: NetworkPeerManager = NetworkPeerManager.getOrCreateInstance()
 
   @ChromeDevtoolsMethod
   fun enable(peer: JsonRpcPeer, params: JSONObject?) {
@@ -113,24 +111,13 @@ class Network(
         it.base64Encoded = false
       }
     }
-    // Prefer EventStore; fall back to legacy temp files; never throw — Chrome's
-    // Network panel calls this optimistically and a JSON-RPC error is noisy.
+    // Never throw — Chrome's Network panel calls this optimistically and a
+    // JSON-RPC error is noisy.
     store.network.readBody(requestId)?.let { body ->
       return GetResponseBodyResponse().also {
         it.body = body.first
         it.base64Encoded = body.second
       }
-    }
-    try {
-      val data = peerManager.responseBodyFileManager.readFile(requestId)
-      return GetResponseBodyResponse().also {
-        it.body = data.data
-        it.base64Encoded = data.base64Encoded
-      }
-    } catch (_: Exception) {
-      // missing body
-    } catch (_: OutOfMemoryError) {
-      // huge body
     }
     return GetResponseBodyResponse().also {
       it.body = ""
@@ -168,42 +155,12 @@ class Network(
     transcriptBody(requestId)?.let { return it }
     val record = store.network.get(requestId)
     val chunks = ArrayList<String>()
+    // Binary bodies come back base64; searching their encoding finds nothing useful.
     store.network.readBody(requestId)?.let { (body, base64) ->
-      if (body.isNotEmpty()) {
-        chunks.add(
-          if (base64) {
-            try {
-              String(android.util.Base64.decode(body, android.util.Base64.DEFAULT), Charsets.UTF_8)
-            } catch (_: Exception) {
-              body
-            }
-          } else {
-            body
-          },
-        )
-      }
-    }
-    if (chunks.isEmpty()) {
-      try {
-        val data = peerManager.responseBodyFileManager.readFile(requestId)
-        if (!data.data.isNullOrEmpty()) {
-          chunks.add(
-            if (data.base64Encoded) {
-              try {
-                String(android.util.Base64.decode(data.data, android.util.Base64.DEFAULT), Charsets.UTF_8)
-              } catch (_: Exception) {
-                data.data
-              }
-            } else {
-              data.data
-            },
-          )
-        }
-      } catch (_: Exception) {
-      }
+      if (!base64 && body.isNotEmpty()) chunks.add(body)
     }
     record?.requestBody?.takeIf { it.isNotEmpty() }?.let { chunks.add(it) }
-    record?.wsFrames?.forEach { frame ->
+    record?.wsFrames?.snapshot()?.forEach { frame ->
       if (frame.payload.isNotEmpty()) {
         chunks.add(frame.payload)
       }
@@ -252,7 +209,7 @@ class Network(
       if (record.isWebSocket || record.resourceType.equals("WebSocket", ignoreCase = true)) {
         // Skip handshake attempts that never opened — they used to flood
         // Chrome's Network list with empty WebSocket rows.
-        if (record.statusCode == 101 || record.wsFrames.isNotEmpty()) {
+        if (record.statusCode == 101 || !record.wsFrames.isEmpty()) {
           emitWebSocketReplay(peer, record)
         }
         continue
@@ -313,8 +270,9 @@ class Network(
         )
       }
     }
-    if (record.wsFrames.isNotEmpty()) {
-      for ((index, archived) in record.wsFrames.withIndex()) {
+    val frames = record.wsFrames.snapshot()
+    if (frames.isNotEmpty()) {
+      for ((index, archived) in frames.withIndex()) {
         val payload = if (archived.truncated) {
           archived.payload + "…[truncated]"
         } else {
@@ -337,7 +295,7 @@ class Network(
         }
         peer.invokeMethod(method, params, null)
       }
-      emitTranscriptRow(peer, record)
+      emitTranscriptRow(peer, record, frames)
     } else if (record.wsFrameCount > 0) {
       peer.invokeMethod(
         "Network.webSocketFrameReceived",
@@ -380,8 +338,8 @@ class Network(
    * Chrome Search skips WebSocket bodies (`isTextType == false`). One XHR per
    * socket holds the frame transcript so Search / Response still work.
    */
-  private fun emitTranscriptRow(peer: JsonRpcPeer, record: NetworkRecord) {
-    val ts = record.wsFrames.firstOrNull { frame ->
+  private fun emitTranscriptRow(peer: JsonRpcPeer, record: NetworkRecord, frames: List<WsFrame>) {
+    val ts = frames.firstOrNull { frame ->
       WsFrameNetworkRows.shouldIndex(frame.opcode, frame.binary, frame.payload)
     }?.timestampMonoMs?.div(1000.0) ?: (record.startedAtMonotonicMs / 1000.0)
     WsFrameNetworkRows.emit(peer, record, ts)

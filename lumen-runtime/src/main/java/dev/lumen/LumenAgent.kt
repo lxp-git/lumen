@@ -113,7 +113,7 @@ object LumenAgent {
       DOMStorage(app),
       IndexedDB(app),
       Log(eventStore),
-      Network(app, eventStore),
+      Network(eventStore),
       Fetch(engine, eventStore),
       IO(engine),
       dev.lumen.inspector.protocol.module.Lumen(eventStore, engine),

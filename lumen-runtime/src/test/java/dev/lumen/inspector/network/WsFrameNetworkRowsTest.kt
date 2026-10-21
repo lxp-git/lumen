@@ -107,7 +107,7 @@ class WsFrameNetworkRowsTest {
       requestBody = null,
       startedAtMs = 0L,
       startedAtMonotonicMs = 0L,
-    ).also { it.wsFrames.addAll(frames.toList()) }
+    ).also { record -> frames.forEach { record.wsFrames.add(it, Int.MAX_VALUE) } }
   }
 
   private fun textFrame(outgoing: Boolean, payload: String): WsFrame {

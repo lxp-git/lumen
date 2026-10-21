@@ -21,23 +21,19 @@ data class NetworkRecord(
   var finishedAtMs: Long? = null,
   var failedReason: String? = null,
   var encodedDataLength: Long = 0,
+  /** Spilled body file, exactly as the app received it (see [responseBodyEncoding]). */
   var responseBodyPath: String? = null,
-  var responseBodyBase64: Boolean = false,
+  /** `gzip` / `deflate` when the app negotiated compression itself and the body is still encoded. */
+  var responseBodyEncoding: String? = null,
   var mocked: Boolean = false,
   var resourceType: String = "Other",
   var isWebSocket: Boolean = false,
   var wsFrameCount: Int = 0,
-  var wsLastFrameHint: String? = null,
-  /**
-   * CopyOnWriteArrayList: appended from OkHttp threads while CDP replay iterates
-   * on the socket thread — a plain ArrayList would throw ConcurrentModificationException.
-   */
-  var wsFrames: MutableList<WsFrame> = java.util.concurrent.CopyOnWriteArrayList(),
   /** Non-fatal note (e.g. Fetch pause timed out and the call continued). */
   var note: String? = null,
 ) {
-  val isFinished: Boolean
-    get() = finishedAtMs != null || failedReason != null
+  /** Archived frames for late-connect replay; capped by [NetworkArchive.archiveWsFrame]. */
+  val wsFrames: WsFrameLog = WsFrameLog()
 }
 
 /** One archived WebSocket frame for late-connect CDP replay. */

@@ -2,11 +2,9 @@ package dev.lumen.okhttp
 
 import android.os.SystemClock
 import dev.lumen.LumenAgent
-import dev.lumen.inspector.network.DefaultResponseHandler
 import dev.lumen.inspector.network.EngineIoPolling
 import dev.lumen.inspector.network.NetworkEventReporter
 import dev.lumen.inspector.network.NetworkEventReporterImpl
-import dev.lumen.inspector.network.RequestBodyHelper
 import dev.lumen.mock.MockEngine
 import dev.lumen.store.EventStore
 import dev.lumen.store.NetworkRecord
@@ -23,9 +21,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import okio.BufferedSource
 import okio.buffer
-import okio.sink
 import okio.source
-import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -88,14 +84,11 @@ class LumenInterceptor : Interceptor {
       ),
     )
 
-    val requestBodyHelper = RequestBodyHelper(eventReporter, requestId)
     // Do not emit HTTP Network.* for the upgrade: Chrome then owns two
     // NetworkRequest objects with the same id, and Messages binds to the HTTP
     // one (a single mutating row). Frames belong on webSocketCreated only.
     if (eventReporter.isEnabled && !isWebSocketUpgrade) {
-      eventReporter.requestWillBeSent(
-        OkHttpInspectorRequest(requestId, request, requestBodyHelper),
-      )
+      eventReporter.requestWillBeSent(OkHttpInspectorRequest(requestId, request, postData))
     }
 
     mockEngine?.matchLocalRule(request.url.toString(), request.method)?.let { rule ->
@@ -192,10 +185,6 @@ class LumenInterceptor : Interceptor {
         eventReporter.httpExchangeFailed(requestId, e.toString())
       }
       throw e
-    }
-
-    if (requestBodyHelper.hasBody()) {
-      requestBodyHelper.reportDataSent()
     }
 
     if (isWebSocketUpgrade) {
@@ -318,49 +307,39 @@ class LumenInterceptor : Interceptor {
       )
     }
 
-    val body = response.body
-    var contentType: MediaType? = null
-    var responseStream: InputStream? = null
-    if (body != null) {
-      contentType = body.contentType()
-      responseStream = body.byteStream()
+    val body = response.body ?: run {
+      store?.network?.update(requestId) { it.finishedAtMs = System.currentTimeMillis() }
+      reportFinished(requestId, 0L)
+      return response
     }
-
-    if (responseStream != null && store != null) {
-      val sink = store.network.openBodySink(requestId, base64Encoded = false)
-      responseStream = TeeInputStream(responseStream, sink) { written ->
-        store.network.update(requestId) {
-          it.finishedAtMs = System.currentTimeMillis()
-          if (written > 0) {
-            it.encodedDataLength = written
-          }
-        }
+    val sink = store?.network?.openBodySink(requestId, response.header("Content-Encoding"))
+    val captured = CaptureInputStream(body.byteStream(), sink) { read, error ->
+      store?.network?.update(requestId) {
+        it.finishedAtMs = System.currentTimeMillis()
+        if (read > 0) it.encodedDataLength = read
+        if (error != null) it.failedReason = error.toString()
       }
-    }
-
-    responseStream = eventReporter.interpretResponseStream(
-      requestId,
-      contentType?.toString(),
-      response.header("Content-Encoding"),
-      responseStream,
-      DefaultResponseHandler(eventReporter, requestId),
-    )
-
-    if (responseStream != null) {
-      val appStream = if (isPolling) {
-        EngineIoPolling.wrapIncoming(request.url.toString(), responseStream)
+      if (error != null) {
+        if (eventReporter.isEnabled) eventReporter.responseReadFailed(requestId, error.toString())
       } else {
-        responseStream
+        reportFinished(requestId, read)
       }
-      return response.newBuilder()
-        .body(ForwardingResponseBody(body, appStream))
-        .build()
     }
+    val appStream = if (isPolling) {
+      EngineIoPolling.wrapIncoming(request.url.toString(), captured)
+    } else {
+      captured
+    }
+    return response.newBuilder()
+      .body(ForwardingResponseBody(body, appStream))
+      .build()
+  }
 
-    store?.network?.update(requestId) {
-      it.finishedAtMs = System.currentTimeMillis()
-    }
-    return response
+  private fun reportFinished(requestId: String, bytes: Long) {
+    if (!eventReporter.isEnabled) return
+    val size = bytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    eventReporter.dataReceived(requestId, size, size)
+    eventReporter.responseReadFinished(requestId)
   }
 
   private fun watchPollingBody(
@@ -392,7 +371,7 @@ class LumenInterceptor : Interceptor {
       it.encodedDataLength = body.size.toLong()
       it.mocked = true
     }
-    store?.network?.openBodySink(requestId, false)?.use { it.write(body) }
+    store?.network?.openBodySink(requestId, contentEncoding = null)?.use { it.write(body) }
   }
 
   private fun pushSyntheticResponse(
@@ -405,16 +384,7 @@ class LumenInterceptor : Interceptor {
     eventReporter.responseHeadersReceived(
       OkHttpInspectorResponse(requestId, request, response, null),
     )
-    // Use a copy so we never consume the Response body returned to the app.
-    val stream = eventReporter.interpretResponseStream(
-      requestId,
-      response.body?.contentType()?.toString(),
-      null,
-      ByteArrayInputStream(bodyBytes),
-      DefaultResponseHandler(eventReporter, requestId),
-    )
-    stream?.readBytes()
-    stream?.close()
+    reportFinished(requestId, bodyBytes.size.toLong())
   }
 
   private fun headersToMap(headers: Headers): Map<String, String> {
@@ -469,7 +439,7 @@ class LumenInterceptor : Interceptor {
   private class OkHttpInspectorRequest(
     private val requestId: String,
     private val request: Request,
-    private val requestBodyHelper: RequestBodyHelper,
+    private val postData: String?,
   ) : NetworkEventReporter.InspectorRequest {
     override fun id(): String = requestId
     override fun friendlyName(): String = ""
@@ -477,19 +447,8 @@ class LumenInterceptor : Interceptor {
     override fun url(): String = request.url.toString()
     override fun method(): String = request.method
 
-    @Throws(IOException::class)
-    override fun body(): ByteArray? {
-      val body = request.body ?: return null
-      val out: OutputStream =
-        requestBodyHelper.createBodySink(firstHeaderValue("Content-Encoding"))
-      val bufferedSink = out.sink().buffer()
-      try {
-        body.writeTo(bufferedSink)
-      } finally {
-        bufferedSink.close()
-      }
-      return requestBodyHelper.displayBody
-    }
+    /** The body already peeked for the archive; never re-serialize a one-shot body. */
+    override fun body(): ByteArray? = postData?.toByteArray()
 
     override fun headerCount(): Int = request.headers.size
     override fun headerName(index: Int): String = request.headers.name(index)
@@ -526,46 +485,82 @@ class LumenInterceptor : Interceptor {
     override fun source(): BufferedSource = interceptedSource
   }
 
-  private class TeeInputStream(
+  /**
+   * Hands the body to the app while copying it into [sink]. [onDone] runs once, with the
+   * byte count, on EOF, on a read error, or when the app closes early (no draining: an app
+   * that stops reading should not cause extra network reads).
+   */
+  private class CaptureInputStream(
     private val upstream: InputStream,
-    private val side: OutputStream,
-    private val onClose: (written: Long) -> Unit,
+    private val sink: OutputStream?,
+    private val onDone: (read: Long, error: IOException?) -> Unit,
   ) : InputStream() {
-    private var copied = 0L
+    private var read = 0L
+    private var sinkOpen = sink != null
+    private var done = false
+
     override fun read(): Int {
-      val b = upstream.read()
-      if (b != -1) {
-        copied++
-        try {
-          side.write(b)
-        } catch (_: IOException) {
-        }
+      val b = guarded { upstream.read() }
+      if (b == -1) {
+        finish(null)
+      } else {
+        read++
+        copy { it.write(b) }
       }
       return b
     }
 
     override fun read(b: ByteArray, off: Int, len: Int): Int {
-      val n = upstream.read(b, off, len)
-      if (n > 0) {
-        copied += n
-        try {
-          side.write(b, off, n)
-        } catch (_: IOException) {
-        }
+      val n = guarded { upstream.read(b, off, len) }
+      if (n == -1) {
+        finish(null)
+      } else if (n > 0) {
+        read += n
+        copy { it.write(b, off, n) }
       }
       return n
     }
+
+    override fun available(): Int = upstream.available()
 
     override fun close() {
       try {
         upstream.close()
       } finally {
-        try {
-          side.close()
-        } catch (_: IOException) {
-        }
-        onClose(copied)
+        finish(null)
       }
+    }
+
+    private inline fun guarded(block: () -> Int): Int = try {
+      block()
+    } catch (e: IOException) {
+      finish(e)
+      throw e
+    }
+
+    private inline fun copy(block: (OutputStream) -> Unit) {
+      if (!sinkOpen) return
+      try {
+        block(sink!!)
+      } catch (_: IOException) {
+        closeSink()
+      }
+    }
+
+    private fun closeSink() {
+      if (!sinkOpen) return
+      sinkOpen = false
+      try {
+        sink?.close()
+      } catch (_: IOException) {
+      }
+    }
+
+    private fun finish(error: IOException?) {
+      if (done) return
+      done = true
+      closeSink()
+      onDone(read, error)
     }
   }
 }

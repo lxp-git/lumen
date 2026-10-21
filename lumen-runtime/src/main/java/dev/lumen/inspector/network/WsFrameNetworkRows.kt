@@ -73,11 +73,12 @@ object WsFrameNetworkRows {
     record: NetworkRecord,
     maxChars: Int = MAX_TRANSCRIPT_CHARS,
   ): String {
-    if (record.wsFrames.isEmpty()) return ""
+    val frames = record.wsFrames.snapshot()
+    if (frames.isEmpty()) return ""
     val lines = ArrayList<String>()
     var chars = 0
-    for (i in record.wsFrames.lastIndex downTo 0) {
-      val frame = record.wsFrames[i]
+    for (i in frames.lastIndex downTo 0) {
+      val frame = frames[i]
       if (!shouldIndex(frame.opcode, frame.binary, frame.payload)) continue
       val line = formatLine(frame.outgoing, frame.payload, frame.truncated)
       val add = if (chars == 0) line.length else line.length + 1
@@ -115,6 +116,9 @@ object WsFrameNetworkRows {
     timestampSec: Double,
   ) {
     val rowId = transcriptRequestId(record.requestId)
+    // emitLive runs per frame; once the row exists, skip rebuilding a transcript
+    // (up to MAX_TRANSCRIPT_CHARS) only to throw it away.
+    if (peer.hasWsTranscript(rowId)) return
     val body = buildTranscript(record)
     if (body.isEmpty()) return
     if (!peer.markWsTranscript(rowId)) return

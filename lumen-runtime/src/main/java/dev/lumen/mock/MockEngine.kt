@@ -107,6 +107,9 @@ class MockEngine(
   private val nextFetchId = AtomicLong(1)
   private val recordOverrides = AtomicBoolean(false)
 
+  /** Compiled glob per pattern string; rules and Fetch patterns are matched on every request. */
+  private val globCache = ConcurrentHashMap<String, Regex>()
+
   /** Pid-qualified so ids stay unique across restarts; myPid() is unmocked on JVM unit tests. */
   private val fetchIdPrefix =
     "lumen-fetch-${runCatching { android.os.Process.myPid() }.getOrDefault(0)}"
@@ -557,7 +560,11 @@ class MockEngine(
 
   private fun matches(pattern: String, url: String): Boolean {
     if (pattern == "*" || pattern == "<all_urls>") return true
-    // CDP urlPattern: '*' = any run, '?' = one char, '\' escapes the next char.
+    return globCache.getOrPut(pattern) { globToRegex(pattern) }.matches(url)
+  }
+
+  /** CDP urlPattern: '*' = any run, '?' = one char, '\' escapes the next char. */
+  private fun globToRegex(pattern: String): Regex {
     val regex = buildString {
       append('^')
       var index = 0
@@ -577,6 +584,6 @@ class MockEngine(
       }
       append('$')
     }
-    return Regex(regex, RegexOption.IGNORE_CASE).matches(url)
+    return Regex(regex, RegexOption.IGNORE_CASE)
   }
 }

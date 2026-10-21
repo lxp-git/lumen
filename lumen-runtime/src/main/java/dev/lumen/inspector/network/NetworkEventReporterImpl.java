@@ -21,8 +21,6 @@ import org.json.JSONObject;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -61,12 +59,6 @@ public class NetworkEventReporterImpl implements NetworkEventReporter {
     }
     NetworkPeerManager peerManager = getPeerManagerIfEnabled();
     return peerManager != null;
-  }
-
-  /** Peer manager if DevTools Network domain has subscribers; may be null while still recording. */
-  @Nullable
-  private NetworkPeerManager getPeerManagerForPush() {
-    return getPeerManagerIfEnabled();
   }
 
   @Nullable
@@ -164,107 +156,15 @@ public class NetworkEventReporterImpl implements NetworkEventReporter {
       receivedParams.loaderId = "1";
       receivedParams.timestamp = stethoNow() / 1000.0;
       receivedParams.response = responseJSON;
-      AsyncPrettyPrinter asyncPrettyPrinter =
-          initAsyncPrettyPrinterForResponse(response, peerManager);
-      receivedParams.type = response.statusCode() == 101
-          ? Page.ResourceType.WEBSOCKET
-          : determineResourceType(asyncPrettyPrinter, contentType, getResourceTypeHelper());
+      if (response.statusCode() == 101) {
+        receivedParams.type = Page.ResourceType.WEBSOCKET;
+      } else if (contentType != null) {
+        receivedParams.type = getResourceTypeHelper().determineResourceType(contentType);
+      } else {
+        receivedParams.type = Page.ResourceType.OTHER;
+      }
       peerManager.sendNotificationToPeers("Network.responseReceived", receivedParams);
     }
-  }
-
-  @Nullable
-  private static AsyncPrettyPrinter initAsyncPrettyPrinterForResponse(
-      InspectorResponse response,
-      NetworkPeerManager peerManager) {
-    AsyncPrettyPrinterRegistry registry = peerManager.getAsyncPrettyPrinterRegistry();
-    AsyncPrettyPrinter asyncPrettyPrinter = createPrettyPrinterForResponse(response, registry);
-    if (asyncPrettyPrinter != null) {
-      peerManager.getResponseBodyFileManager().associateAsyncPrettyPrinterWithId(
-          response.requestId(),
-          asyncPrettyPrinter);
-    }
-     return asyncPrettyPrinter;
-  }
-
-  private static Page.ResourceType determineResourceType(
-      AsyncPrettyPrinter asyncPrettyPrinter,
-      String contentType,
-      ResourceTypeHelper resourceTypeHelper) {
-    if (asyncPrettyPrinter != null) {
-      return asyncPrettyPrinter.getPrettifiedType().getResourceType();
-    } else {
-      return contentType != null ?
-          resourceTypeHelper.determineResourceType(contentType) :
-          Page.ResourceType.OTHER;
-    }
-  }
-
-  //@VisibleForTesting
-  @Nullable
-  static AsyncPrettyPrinter createPrettyPrinterForResponse(
-      InspectorResponse response,
-      @Nullable AsyncPrettyPrinterRegistry registry) {
-    if (registry != null) {
-      for (int i = 0, count = response.headerCount(); i < count; i++) {
-        AsyncPrettyPrinterFactory factory = registry.lookup(response.headerName(i));
-        if (factory != null) {
-          AsyncPrettyPrinter asyncPrettyPrinter = factory.getInstance(
-              response.headerName(i),
-              response.headerValue(i));
-          return asyncPrettyPrinter;
-        }
-      }
-    }
-    return null;
-  }
-
-  @Override
-  public InputStream interpretResponseStream(
-      String requestId,
-      @Nullable String contentType,
-      @Nullable String contentEncoding,
-      @Nullable InputStream availableInputStream,
-      ResponseHandler responseHandler) {
-    NetworkPeerManager peerManager = getPeerManagerIfEnabled();
-    if (peerManager != null) {
-      if (availableInputStream == null) {
-        responseHandler.onEOF();
-        return null;
-      }
-      Page.ResourceType resourceType =
-          contentType != null ?
-              getResourceTypeHelper().determineResourceType(contentType) :
-              null;
-
-      // There's this weird logic at play that only knows how to base64 decode certain kinds of
-      // resources.
-      boolean base64Encode = false;
-      if (resourceType != null && resourceType == Page.ResourceType.IMAGE) {
-        base64Encode = true;
-      }
-
-      try {
-        OutputStream fileOutputStream =
-            peerManager.getResponseBodyFileManager().openResponseBodyFile(
-                requestId,
-                base64Encode);
-        return DecompressionHelper.teeInputWithDecompression(
-            peerManager,
-            requestId,
-            availableInputStream,
-            fileOutputStream,
-            contentEncoding,
-            responseHandler);
-      } catch (IOException e) {
-        CLog.writeToConsole(
-            peerManager,
-            Console.MessageLevel.ERROR,
-            Console.MessageSource.NETWORK,
-            "Error writing response body data for request #" + requestId);
-      }
-    }
-    return availableInputStream;
   }
 
   @Override
@@ -313,17 +213,6 @@ public class NetworkEventReporterImpl implements NetworkEventReporter {
       failedParams.type = Page.ResourceType.OTHER;
       peerManager.sendNotificationToPeers("Network.loadingFailed", failedParams);
     }
-  }
-
-  @Override
-  public void dataSent(
-      String requestId,
-      int dataLength,
-      int encodedDataLength) {
-    // The inspector protocol only gives us the dataReceived event, but we can happily combine
-    // upstream and downstream data into this to visualize the real size of the request, not
-    // strictly the size of the "content" as reported in the UI.
-    dataReceived(requestId, dataLength, encodedDataLength);
   }
 
   @Override

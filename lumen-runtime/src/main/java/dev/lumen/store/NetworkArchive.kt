@@ -2,14 +2,16 @@ package dev.lumen.store
 
 import android.content.Context
 import android.util.Base64
+import dev.lumen.BuildConfig
 import dev.lumen.LumenConfig
 import dev.lumen.common.LogRedirector
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FilterOutputStream
 import java.io.IOException
+import java.io.OutputStream
 import java.util.ArrayDeque
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 
 /**
@@ -20,14 +22,11 @@ class NetworkArchive(
   context: Context,
   private val config: LumenConfig,
 ) {
-  fun interface Listener {
-    fun onRecordUpdated(record: NetworkRecord)
-  }
-
   private val tag = "NetworkArchive"
   private val root = File(context.applicationContext.filesDir, "lumen/network").also { it.mkdirs() }
   private val bodiesDir = File(root, "bodies").also { it.mkdirs() }
   private val metaFile = File(root, "session-${android.os.Process.myPid()}.jsonl")
+  private val meta = JsonlAppender(metaFile, "lumen-net-meta")
 
   private val lock = Any()
   private val bodyPrune = BodyPruneScheduler(
@@ -43,17 +42,6 @@ class NetworkArchive(
   }
   private val records = LinkedHashMap<String, NetworkRecord>()
   private val order = ArrayDeque<String>()
-  private val listeners = CopyOnWriteArrayList<Listener>()
-
-  val processStartedAtMs: Long = System.currentTimeMillis()
-
-  fun addListener(listener: Listener) {
-    listeners.add(listener)
-  }
-
-  fun removeListener(listener: Listener) {
-    listeners.remove(listener)
-  }
 
   fun put(record: NetworkRecord) {
     synchronized(lock) {
@@ -64,24 +52,23 @@ class NetworkArchive(
       trimLocked()
       appendMetaLocked(record)
     }
-    notify(record)
   }
 
+  /**
+   * Mutates the record under the archive lock. [persistMeta] appends a session-jsonl line;
+   * pass false for changes that line does not carry (body path, frames).
+   */
   fun update(
     requestId: String,
     persistMeta: Boolean = true,
     mutator: (NetworkRecord) -> Unit,
-  ): NetworkRecord? {
-    val updated = synchronized(lock) {
-      val existing = records[requestId] ?: return null
-      mutator(existing)
-      if (persistMeta) {
-        appendMetaLocked(existing)
-      }
-      existing
+  ): NetworkRecord? = synchronized(lock) {
+    val existing = records[requestId] ?: return null
+    mutator(existing)
+    if (persistMeta) {
+      appendMetaLocked(existing)
     }
-    notify(updated)
-    return updated
+    existing
   }
 
   /**
@@ -121,38 +108,14 @@ class NetworkArchive(
         truncated = clipped.length < src.length,
       )
     }
-    update(requestId, persistMeta = false) {
+    val record = update(requestId, persistMeta = false) {
       it.isWebSocket = true
       it.resourceType = "WebSocket"
       it.wsFrameCount += 1
       it.encodedDataLength += if (binary != null) binary.size.toLong() else (text?.length ?: 0).toLong()
-      it.wsLastFrameHint = if (outgoing) "send" else "recv"
-      it.wsFrames.add(frame)
-      trimWsFrames(it.wsFrames, config.maxWsFramesPerSocket)
-    }
-  }
-
-  /**
-   * Drop Engine.IO ping/pong (`2` / `3`) before dropping chat/message frames so a
-   * long-lived Socket.IO LLM connection still has the conversation on late attach.
-   */
-  private fun trimWsFrames(frames: MutableList<WsFrame>, max: Int) {
-    while (frames.size > max) {
-      val control = frames.indexOfFirst(::isEngineIoControl)
-      if (control >= 0) {
-        frames.removeAt(control)
-      } else {
-        frames.removeAt(0)
-      }
-    }
-  }
-
-  private fun isEngineIoControl(frame: WsFrame): Boolean {
-    if (frame.binary) return false
-    val p = frame.payload
-    if (p.isEmpty()) return false
-    val c = p[0]
-    return (c == '2' || c == '3') && p.length <= 16
+    } ?: return
+    // Outside the archive lock: the frame log has its own, and eviction scans the list.
+    record.wsFrames.add(frame, config.maxWsFramesPerSocket)
   }
 
   fun listSessions(): List<NetworkSessionInfo> {
@@ -224,75 +187,60 @@ class NetworkArchive(
   fun allRecords(): List<NetworkRecord> = synchronized(lock) { order.mapNotNull { records[it] } }
 
   /**
-   * Tee sink for response bodies. Returns an [java.io.OutputStream] that writes to a
-   * capped body file associated with [requestId]. First byte mirrors Stetho convention
-   * (0 = utf8 text, 1 = base64 payload follows) when [base64Encode] is used by callers
-   * that pre-encode; for raw tee we store plain bytes and set the flag on the record.
+   * Sink for the response body of [requestId], written exactly as the app reads it and
+   * capped at [LumenConfig.maxBodyBytes]. [contentEncoding] is the response's
+   * `Content-Encoding`; a supported one is reversed by [readBody], not here.
    */
-  fun openBodySink(requestId: String, base64Encoded: Boolean): java.io.OutputStream {
+  fun openBodySink(requestId: String, contentEncoding: String?): OutputStream {
     val file = File(bodiesDir, "body-$requestId")
-    update(requestId) {
+    update(requestId, persistMeta = false) {
       it.responseBodyPath = file.absolutePath
-      it.responseBodyBase64 = base64Encoded
+      it.responseBodyEncoding = BodyCodec.supportedEncoding(contentEncoding)
     }
-    // Prefix byte keeps compatibility with ResponseBodyFileManager readers.
-    val raw = file.outputStream()
-    raw.write(if (base64Encoded) 1 else 0)
-    return object : java.io.FilterOutputStream(raw) {
+    return object : FilterOutputStream(file.outputStream()) {
       private var written = 0L
-      private var truncated = false
 
-      // Write through `out` directly: FilterOutputStream.write(byte[],int,int)
-      // delegates to the overridden write(int), which would double-count.
       override fun write(b: Int) {
-        if (truncated || written >= config.maxBodyBytes) {
-          truncated = true
-          return
-        }
+        if (written >= config.maxBodyBytes) return
         out.write(b)
         written++
       }
 
+      // Write through `out` directly: FilterOutputStream.write(byte[],int,int)
+      // delegates to the overridden write(int), which would double-count.
       override fun write(b: ByteArray, off: Int, len: Int) {
-        if (truncated || len <= 0) return
         val allowed = minOf(len.toLong(), config.maxBodyBytes - written).toInt()
-        if (allowed <= 0) {
-          truncated = true
-          return
-        }
+        if (allowed <= 0) return
         out.write(b, off, allowed)
         written += allowed
-        if (allowed < len) truncated = true
       }
 
       override fun close() {
         super.close()
-        update(requestId) { /* path already set */ }
         bodyPrune.request()
       }
     }
   }
 
+  /**
+   * The body of [requestId] for DevTools: decoded, then UTF-8 text when it looks like text
+   * (`second == false`) or base64 otherwise (`second == true`). Null when nothing was captured.
+   */
   fun readBody(requestId: String): Pair<String, Boolean>? {
     val record = get(requestId) ?: return null
-    val path = record.responseBodyPath ?: return null
-    val file = File(path)
-    if (!file.exists()) return null
-    return try {
-      file.inputStream().use { input ->
-        val flag = input.read()
-        if (flag < 0) return null
-        val base64 = flag != 0
-        val bytes = input.readBytes()
-        if (base64) {
-          Pair(String(bytes, Charsets.UTF_8), true)
-        } else {
-          Pair(String(bytes, Charsets.UTF_8), false)
-        }
+    val file = record.responseBodyPath?.let(::File)?.takeIf { it.exists() } ?: return null
+    val bytes = try {
+      file.inputStream().use {
+        BodyCodec.decode(it, record.responseBodyEncoding, MAX_DECODED_BODY_FACTOR * config.maxBodyBytes)
       }
     } catch (e: IOException) {
       LogRedirector.w(tag, "readBody failed for $requestId", e)
-      null
+      return null
+    }
+    return if (BodyCodec.isText(record.mimeType, bytes)) {
+      Pair(String(bytes, Charsets.UTF_8), false)
+    } else {
+      Pair(Base64.encodeToString(bytes, Base64.NO_WRAP), true)
     }
   }
 
@@ -305,7 +253,7 @@ class NetworkArchive(
     return JSONObject()
       .put("log", JSONObject()
         .put("version", "1.2")
-        .put("creator", JSONObject().put("name", "Lumen").put("version", "0.3.0"))
+        .put("creator", JSONObject().put("name", "Lumen").put("version", BuildConfig.LUMEN_VERSION))
         .put("entries", entries))
   }
 
@@ -338,7 +286,7 @@ class NetworkArchive(
         "log",
         JSONObject()
           .put("version", "1.2")
-          .put("creator", JSONObject().put("name", "Lumen").put("version", "0.3.0"))
+          .put("creator", JSONObject().put("name", "Lumen").put("version", BuildConfig.LUMEN_VERSION))
           .put("comment", "Previous process session — metadata only, not injected into Network.enable")
           .put("entries", entries),
       )
@@ -439,9 +387,10 @@ class NetworkArchive(
   }
 
   private fun appendMetaLocked(record: NetworkRecord) {
-    try {
-      // One-line summary; full fidelity is the in-memory map + body files for this process.
-      val line = JSONObject()
+    // One-line summary; full fidelity is the in-memory map + body files for this process.
+    // Built under the lock (consistent snapshot), written by the appender thread.
+    meta.append(
+      JSONObject()
         .put("id", record.requestId)
         .put("url", record.url)
         .put("method", record.method)
@@ -452,20 +401,12 @@ class NetworkArchive(
         .put("encodedDataLength", record.encodedDataLength)
         .put("ws", record.isWebSocket)
         .put("type", record.resourceType)
-        .toString()
-      metaFile.appendText(line + "\n")
-    } catch (e: IOException) {
-      LogRedirector.w(tag, "meta append failed", e)
-    }
+        .toString(),
+    )
   }
 
-  private fun notify(record: NetworkRecord) {
-    for (l in listeners) {
-      try {
-        l.onRecordUpdated(record)
-      } catch (t: Throwable) {
-        LogRedirector.w(tag, "listener failed", t)
-      }
-    }
+  private companion object {
+    /** Decoded bodies may exceed the stored (compressed) cap; bound the inflation. */
+    const val MAX_DECODED_BODY_FACTOR = 4
   }
 }
