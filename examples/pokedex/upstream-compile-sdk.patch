@@ -1,0 +1,13 @@
+diff --git a/settings.gradle.kts b/settings.gradle.kts
+index 5f39855..f3314cf 100644
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -64,7 +64,7 @@ plugins {
+ 
+ android {
+   minSdk = 23
+-  compileSdk = 36
++  compileSdk = 37
+ }
+ 
+ dependencyResolutionManagement {

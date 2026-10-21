@@ -1,0 +1,31 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 794b135..0e41e03 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -23,6 +23,8 @@ plugins {
+   alias(libs.plugins.ksp)
+   alias(libs.plugins.kotlin.parcelize)
+   alias(libs.plugins.hilt.plugin)
++  // Lumen: Chrome DevTools for this app's debug builds. Release builds are untouched.
++  alias(libs.plugins.lumen)
+ }
+ 
+ android {
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index 0b4d766..33df2af 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -1,4 +1,5 @@
+ [versions]
++lumen = "0.3.0"
+ targetSdk = "36"
+ jvmBytecode = "17"
+ agp = "9.4.1"
+@@ -46,6 +47,7 @@ mockito-kotlin = "6.4.0"
+ spotless = "6.25.0"
+ 
+ [plugins]
++lumen = { id = "io.github.lxp-git.lumen", version.ref = "lumen" }
+ android-application = { id = "com.android.application", version.ref = "agp" }
+ android-library = { id = "com.android.library", version.ref = "agp" }
+ android-test = { id = "com.android.test", version.ref = "agp" }

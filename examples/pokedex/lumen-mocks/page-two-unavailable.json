@@ -1,0 +1,11 @@
+{
+  "urlContains": "pokeapi.co/api/v2/pokemon?limit=20&offset=20",
+  "method": "GET",
+  "status": 503,
+  "delayMs": 1200,
+  "headers": {
+    "Content-Type": "application/json",
+    "Retry-After": "60"
+  },
+  "body": "{\"detail\":\"Simulated by Lumen: page 2 is down\"}"
+}

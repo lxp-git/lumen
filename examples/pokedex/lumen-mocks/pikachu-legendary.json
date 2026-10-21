@@ -1,0 +1,10 @@
+{
+  "urlContains": "pokeapi.co/api/v2/pokemon/pikachu",
+  "method": "GET",
+  "status": 200,
+  "headers": {
+    "Content-Type": "application/json; charset=utf-8",
+    "X-Lumen-Mock": "pikachu-legendary"
+  },
+  "body": "{\"id\":25,\"name\":\"pikachu\",\"height\":99,\"weight\":999,\"base_experience\":999,\"types\":[{\"slot\":1,\"type\":{\"name\":\"electric\"}},{\"slot\":2,\"type\":{\"name\":\"dragon\"}}]}"
+}
