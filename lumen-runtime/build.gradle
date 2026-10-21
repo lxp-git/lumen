@@ -26,8 +26,9 @@ android {
         jvmTarget = '17'
     }
 
-    lintOptions {
-        abortOnError false
+    // Library minSdk is the host app's floor; NewApi regressions must fail the build.
+    lint {
+        abortOnError true
     }
 }
 

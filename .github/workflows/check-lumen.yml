@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  assemble-sample:
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +18,41 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Assemble debug sample
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-        run: ./gradlew --no-daemon :lumen-sample:assembleDebug
+      - name: Unit tests and lint
+        run: >
+          ./gradlew --no-daemon
+          :lumen-runtime:testDebugUnitTest
+          :lumen-runtime:lintDebug
+          :lumen-okhttp:lintDebug
+
+      - name: Assemble sample (debug and release)
+        run: ./gradlew --no-daemon :lumen-sample:assembleDebug :lumen-sample:assembleRelease
+
+      - name: Release build ships no Lumen
+        run: |
+          apk=lumen-sample/build/outputs/apk/release/lumen-sample-release.apk
+          mkdir -p release-apk && unzip -o -q "$apk" -d release-apk
+          if grep -a -l -E 'Ldev/lumen/(store|init|okhttp|inspector)/' release-apk/classes*.dex; then
+            echo "Lumen classes found in the release APK" >&2
+            exit 1
+          fi
+          aapt2="$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)"
+          if "$aapt2" dump xmltree --file AndroidManifest.xml "$apk" | grep -q 'dev.lumen.init'; then
+            echo "Lumen providers found in the release manifest" >&2
+            exit 1
+          fi
+
+      - name: Local publishing works
+        run: ./scripts/publish-local.sh
+
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: lumen.py tests
+        run: python -m unittest discover -s plugins/lumen/tests -v
