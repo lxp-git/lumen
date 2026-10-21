@@ -10,6 +10,11 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         consumerProguardFiles 'proguard-consumer.pro'
+        buildConfigField 'String', 'LUMEN_VERSION', "\"${rootProject.ext.lumenVersion}\""
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     compileOptions {
@@ -27,7 +32,6 @@ android {
 }
 
 dependencies {
-    implementation 'commons-cli:commons-cli:1.2'
     implementation 'com.google.code.findbugs:jsr305:3.0.2'
     implementation 'androidx.annotation:annotation:1.7.1'
     implementation 'androidx.appcompat:appcompat:1.6.1'

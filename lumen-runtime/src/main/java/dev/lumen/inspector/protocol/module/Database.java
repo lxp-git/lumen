@@ -7,13 +7,13 @@
 
 package dev.lumen.inspector.protocol.module;
 
-import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteException;
 import android.util.SparseArray;
 
 import dev.lumen.common.LogUtil;
 import dev.lumen.common.Util;
+import dev.lumen.inspector.database.SqliteDatabaseDriver;
 import dev.lumen.inspector.helper.ChromePeerManager;
 import dev.lumen.inspector.helper.ObjectIdMapper;
 import dev.lumen.inspector.helper.PeersRegisteredListener;
@@ -28,6 +28,7 @@ import dev.lumen.json.annotation.JsonProperty;
 
 import org.json.JSONObject;
 
+import java.io.File;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -59,24 +60,17 @@ public class Database implements ChromeDevtoolsDomain {
    */
   private static final String UNKNOWN_BLOB_LABEL = "{blob}";
 
-  private List<DatabaseDriver2> mDatabaseDrivers;
+  private final SqliteDatabaseDriver mDriver;
   private final ChromePeerManager mChromePeerManager;
   private final DatabasePeerRegistrationListener mPeerListener;
   private final ObjectMapper mObjectMapper;
 
-  /**
-   * Constructs the object.
-   */
-  public Database() {
-    mDatabaseDrivers = new ArrayList<>();
+  public Database(SqliteDatabaseDriver driver, String packageName) {
+    mDriver = driver;
     mChromePeerManager = new ChromePeerManager();
-    mPeerListener = new DatabasePeerRegistrationListener(mDatabaseDrivers);
+    mPeerListener = new DatabasePeerRegistrationListener(driver, packageName);
     mChromePeerManager.setListener(mPeerListener);
     mObjectMapper = new ObjectMapper();
-  }
-
-  public void add(DatabaseDriver2 databaseDriver) {
-    mDatabaseDrivers.add(databaseDriver);
   }
 
   @ChromeDevtoolsMethod
@@ -95,13 +89,11 @@ public class Database implements ChromeDevtoolsDomain {
     GetDatabaseTableNamesRequest request = mObjectMapper.convertValue(params,
         GetDatabaseTableNamesRequest.class);
 
-    String databaseId = request.databaseId;
-    DatabaseDescriptorHolder holder =
-        mPeerListener.getDatabaseDescriptorHolder(databaseId);
+    File databaseFile = mPeerListener.getDatabaseFile(request.databaseId);
 
     try {
       GetDatabaseTableNamesResponse response = new GetDatabaseTableNamesResponse();
-      response.tableNames = holder.driver.getTableNames(holder.descriptor);
+      response.tableNames = mDriver.getTableNames(databaseFile);
       return response;
     } catch (SQLiteException e) {
       throw new JsonRpcException(
@@ -117,14 +109,13 @@ public class Database implements ChromeDevtoolsDomain {
     ExecuteSQLRequest request = mObjectMapper.convertValue(params,
         ExecuteSQLRequest.class);
 
-    DatabaseDescriptorHolder holder =
-        mPeerListener.getDatabaseDescriptorHolder(request.databaseId);
+    File databaseFile = mPeerListener.getDatabaseFile(request.databaseId);
 
     try {
-      return holder.driver.executeSQL(
-          holder.descriptor,
+      return mDriver.executeSQL(
+          databaseFile,
           request.query,
-          new DatabaseDriver.ExecuteResultHandler<ExecuteSQLResponse>() {
+          new SqliteDatabaseDriver.ExecuteResultHandler<ExecuteSQLResponse>() {
         @Override
         public ExecuteSQLResponse handleRawQuery() throws SQLiteException {
           ExecuteSQLResponse response = new ExecuteSQLResponse();
@@ -238,33 +229,31 @@ public class Database implements ChromeDevtoolsDomain {
 
   @ThreadSafe
   private static class DatabasePeerRegistrationListener extends PeersRegisteredListener {
-    private final List<DatabaseDriver2> mDatabaseDrivers;
+    private final SqliteDatabaseDriver mDriver;
+    private final String mPackageName;
 
     @GuardedBy("this")
-    private final SparseArray<DatabaseDescriptorHolder> mDatabaseHolders = new SparseArray<>();
+    private final SparseArray<File> mDatabaseFiles = new SparseArray<>();
 
     @GuardedBy("this")
     private final ObjectIdMapper mDatabaseIdMapper = new ObjectIdMapper();
 
-    private DatabasePeerRegistrationListener(List<DatabaseDriver2> databaseDrivers) {
-      mDatabaseDrivers = databaseDrivers;
+    private DatabasePeerRegistrationListener(SqliteDatabaseDriver driver, String packageName) {
+      mDriver = driver;
+      mPackageName = packageName;
     }
 
-    public DatabaseDescriptorHolder getDatabaseDescriptorHolder(String databaseId) {
-      return mDatabaseHolders.get(Integer.parseInt(databaseId));
+    public synchronized File getDatabaseFile(String databaseId) {
+      return mDatabaseFiles.get(Integer.parseInt(databaseId));
     }
 
     @Override
     protected synchronized void onFirstPeerRegistered() {
-      for (DatabaseDriver2<?> driver : mDatabaseDrivers) {
-        for (DatabaseDescriptor desc : driver.getDatabaseNames()) {
-          Integer databaseId = mDatabaseIdMapper.getIdForObject(desc);
-          if (databaseId == null) {
-            databaseId = mDatabaseIdMapper.putObject(desc);
-            mDatabaseHolders.put(
-                databaseId,
-                new DatabaseDescriptorHolder(driver, desc));
-          }
+      for (File file : mDriver.getDatabaseFiles()) {
+        Integer databaseId = mDatabaseIdMapper.getIdForObject(file);
+        if (databaseId == null) {
+          databaseId = mDatabaseIdMapper.putObject(file);
+          mDatabaseFiles.put(databaseId, file);
         }
       }
     }
@@ -272,19 +261,16 @@ public class Database implements ChromeDevtoolsDomain {
     @Override
     protected synchronized void onLastPeerUnregistered() {
       mDatabaseIdMapper.clear();
-      mDatabaseHolders.clear();
+      mDatabaseFiles.clear();
     }
 
     @Override
     protected synchronized void onPeerAdded(JsonRpcPeer peer) {
-      for (int i = 0, N = mDatabaseHolders.size(); i < N; i++) {
-        int id = mDatabaseHolders.keyAt(i);
-        DatabaseDescriptorHolder holder = mDatabaseHolders.valueAt(i);
-
+      for (int i = 0, N = mDatabaseFiles.size(); i < N; i++) {
         Database.DatabaseObject databaseParams = new Database.DatabaseObject();
-        databaseParams.id = String.valueOf(id);
-        databaseParams.name = holder.descriptor.name();
-        databaseParams.domain = holder.driver.getContext().getPackageName();
+        databaseParams.id = String.valueOf(mDatabaseFiles.keyAt(i));
+        databaseParams.name = mDatabaseFiles.valueAt(i).getName();
+        databaseParams.domain = mPackageName;
         databaseParams.version = "N/A";
         Database.AddDatabaseEvent eventParams = new Database.AddDatabaseEvent();
         eventParams.database = databaseParams;
@@ -295,16 +281,6 @@ public class Database implements ChromeDevtoolsDomain {
     @Override
     protected synchronized void onPeerRemoved(JsonRpcPeer peer) {
       // Nothing to do on each peer removal...
-    }
-  }
-
-  private static class DatabaseDescriptorHolder {
-    public final DatabaseDriver2 driver;
-    public final DatabaseDescriptor descriptor;
-
-    public DatabaseDescriptorHolder(DatabaseDriver2 driver, DatabaseDescriptor descriptor) {
-      this.driver = driver;
-      this.descriptor = descriptor;
     }
   }
 
@@ -362,17 +338,5 @@ public class Database implements ChromeDevtoolsDomain {
 
     @JsonProperty(required = true)
     public int code;
-  }
-
-  /**
-   * @deprecated Use {@link DatabaseDriver2} which allows for structured identifiers of database
-   *     objects (such as a file path instead of just a string name) which also serves as a
-   *     namespacing separation of multiple drivers.
-   */
-  @Deprecated
-  public static abstract class DatabaseDriver extends BaseDatabaseDriver<String> {
-    public DatabaseDriver(Context context) {
-      super(context);
-    }
   }
 }

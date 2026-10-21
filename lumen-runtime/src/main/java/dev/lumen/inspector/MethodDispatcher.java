@@ -23,7 +23,7 @@ import dev.lumen.common.Util;
 import dev.lumen.inspector.jsonrpc.JsonRpcException;
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer;
 import dev.lumen.inspector.jsonrpc.JsonRpcResult;
-import dev.lumen.inspector.jsonrpc.protocol.EmptyResult;
+import dev.lumen.inspector.jsonrpc.RawJsonResult;
 import dev.lumen.inspector.jsonrpc.protocol.JsonRpcError;
 import dev.lumen.inspector.protocol.ChromeDevtoolsDomain;
 import dev.lumen.inspector.protocol.ChromeDevtoolsMethod;
@@ -100,8 +100,10 @@ public class MethodDispatcher {
     public JSONObject invoke(JsonRpcPeer peer, @Nullable JSONObject params)
         throws InvocationTargetException, IllegalAccessException, JSONException, JsonRpcException {
       Object internalResult = mMethod.invoke(mInstance, peer, params);
-      if (internalResult == null || internalResult instanceof EmptyResult) {
+      if (internalResult == null) {
         return new JSONObject();
+      } else if (internalResult instanceof RawJsonResult) {
+        return ((RawJsonResult) internalResult).getJson();
       } else {
         JsonRpcResult convertableResult = (JsonRpcResult)internalResult;
         return mObjectMapper.convertValue(convertableResult, JSONObject.class);

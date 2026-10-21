@@ -7,13 +7,10 @@
 
 package dev.lumen.inspector.elements.android;
 
-import android.annotation.TargetApi;
 import android.graphics.Rect;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
-import dev.lumen.common.LogUtil;
 import dev.lumen.common.Util;
 
 import javax.annotation.Nullable;
@@ -23,13 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 abstract class ViewHighlighter {
 
   public static ViewHighlighter newInstance() {
-    // TODO: find ways to do highlighting on older versions too
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-      return new OverlayHighlighter();
-    } else {
-      LogUtil.w("Running on pre-JBMR2: View highlighting is not supported");
-      return new NoopHighlighter();
-    }
+    return new OverlayHighlighter();
   }
 
   protected ViewHighlighter() {
@@ -39,17 +30,6 @@ abstract class ViewHighlighter {
 
   public abstract void setHighlightedView(View view, @Nullable Rect bounds, int color);
 
-  private static final class NoopHighlighter extends ViewHighlighter {
-    @Override
-    public void clearHighlight() {
-    }
-
-    @Override
-    public void setHighlightedView(View view, @Nullable Rect bounds, int color) {
-    }
-  }
-
-  @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
   private static final class OverlayHighlighter extends ViewHighlighter {
     // TODO: use the top-level ViewGroupOverlay instead of ViewOverlay so that we don't end up
     //       causing every single view to allocate a ViewOverlay

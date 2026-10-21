@@ -7,11 +7,7 @@
 
 package dev.lumen.inspector.protocol.module;
 
-import android.content.Context;
-import dev.lumen.Lumen;
 import dev.lumen.common.LogUtil;
-import dev.lumen.inspector.console.RuntimeRepl;
-import dev.lumen.inspector.console.RuntimeReplFactory;
 import dev.lumen.inspector.helper.ObjectIdMapper;
 import dev.lumen.inspector.jsonrpc.DisconnectReceiver;
 import dev.lumen.inspector.jsonrpc.JsonRpcException;
@@ -20,7 +16,6 @@ import dev.lumen.inspector.jsonrpc.JsonRpcResult;
 import dev.lumen.inspector.jsonrpc.protocol.JsonRpcError;
 import dev.lumen.inspector.protocol.ChromeDevtoolsDomain;
 import dev.lumen.inspector.protocol.ChromeDevtoolsMethod;
-import dev.lumen.inspector.runtime.RhinoDetectingRuntimeReplFactory;
 import dev.lumen.json.ObjectMapper;
 import dev.lumen.json.annotation.JsonProperty;
 import dev.lumen.json.annotation.JsonValue;
@@ -40,7 +35,6 @@ import java.util.Map;
 import java.util.Set;
 
 import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 
 public class Runtime implements ChromeDevtoolsDomain {
   private final ObjectMapper mObjectMapper = new ObjectMapper();
@@ -48,40 +42,9 @@ public class Runtime implements ChromeDevtoolsDomain {
   private static final Map<JsonRpcPeer, Session> sSessions =
       Collections.synchronizedMap(new HashMap<JsonRpcPeer, Session>());
 
-  private final RuntimeReplFactory mReplFactory;
-
-  /**
-   * @deprecated Provided for ABI compatibility
-   *
-   * @see #Runtime(RuntimeReplFactory)
-   * @see Lumen.DefaultInspectorModulesBuilder#runtimeRepl(RuntimeReplFactory)
-   */
-  @Deprecated
-  public Runtime() {
-    this(new RuntimeReplFactory() {
-      @Override
-      public RuntimeRepl newInstance() {
-        return new RuntimeRepl() {
-          @Override
-          public Object evaluate(String expression) throws Throwable {
-            return "Not supported with legacy Runtime module";
-          }
-        };
-      }
-    });
-  }
-
-  /**
-   * @deprecated This was a transitionary API that was replaced by
-   *     {@link dev.lumen.Lumen.DefaultInspectorModulesBuilder#runtimeRepl}
-   */
-  public Runtime(Context context) {
-    this(new RhinoDetectingRuntimeReplFactory(context));
-  }
-
-  public Runtime(RuntimeReplFactory replFactory) {
-    mReplFactory = replFactory;
-  }
+  /** Console input is answered with this; Lumen inspects an Android process, not a JS VM. */
+  private static final String CONSOLE_EVAL_UNSUPPORTED =
+      "Lumen does not evaluate expressions. Console shows the app's logcat.";
 
   public static int mapObject(JsonRpcPeer peer, Object object) {
     return getSession(peer).getObjects().putObject(object);
@@ -164,7 +127,7 @@ public class Runtime implements ChromeDevtoolsDomain {
 
   @ChromeDevtoolsMethod
   public JsonRpcResult evaluate(JsonRpcPeer peer, JSONObject params) {
-    return getSession(peer).evaluate(mReplFactory, params);
+    return getSession(peer).evaluate(params);
   }
 
   @ChromeDevtoolsMethod
@@ -199,9 +162,6 @@ public class Runtime implements ChromeDevtoolsDomain {
   private static class Session {
     private final ObjectIdMapper mObjects = new ObjectIdMapper();
     private final ObjectMapper mObjectMapper = new ObjectMapper();
-
-    @Nullable
-    private RuntimeRepl mRepl;
 
     public ObjectIdMapper getObjects() {
       return mObjects;
@@ -258,13 +218,11 @@ public class Runtime implements ChromeDevtoolsDomain {
       return result;
     }
 
-    public EvaluateResponse evaluate(RuntimeReplFactory replFactory, JSONObject params) {
+    public EvaluateResponse evaluate(JSONObject params) {
       try {
         EvaluateRequest request = mObjectMapper.convertValue(params, EvaluateRequest.class);
         if (request != null && "console".equals(request.objectGroup)) {
-          RuntimeRepl repl = getRepl(replFactory);
-          Object result = repl.evaluate(request.expression);
-          return buildNormalResponse(result);
+          return buildNormalResponse(CONSOLE_EVAL_UNSUPPORTED);
         }
         // Autocomplete / Elements / Sensors probe the page as JS. We are not a
         // browser; returning undefined keeps the error badge clean.
@@ -281,14 +239,6 @@ public class Runtime implements ChromeDevtoolsDomain {
       result.type = ObjectType.UNDEFINED;
       response.result = result;
       return response;
-    }
-
-    @Nonnull
-    private synchronized RuntimeRepl getRepl(RuntimeReplFactory replFactory) {
-      if (mRepl == null) {
-        mRepl = replFactory.newInstance();
-      }
-      return mRepl;
     }
 
     private EvaluateResponse buildNormalResponse(Object retval) {

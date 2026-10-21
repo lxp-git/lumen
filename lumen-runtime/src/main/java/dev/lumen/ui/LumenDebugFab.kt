@@ -91,7 +91,7 @@ object LumenDebugFab {
     fun pi(action: String): PendingIntent {
       val intent = Intent(action).setPackage(context.packageName)
       val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-        if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0
+        PendingIntent.FLAG_IMMUTABLE
       return PendingIntent.getBroadcast(context, action.hashCode(), intent, flags)
     }
 
@@ -102,7 +102,7 @@ object LumenDebugFab {
       0,
       openActivity,
       PendingIntent.FLAG_UPDATE_CURRENT or
-        if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0,
+        PendingIntent.FLAG_IMMUTABLE,
     )
 
     val notif = NotificationCompat.Builder(context, CHANNEL_ID)

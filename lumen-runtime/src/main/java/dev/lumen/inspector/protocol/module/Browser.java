@@ -7,6 +7,8 @@
 
 package dev.lumen.inspector.protocol.module;
 
+import dev.lumen.BuildConfig;
+
 import android.os.Build;
 
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer;
@@ -35,7 +37,7 @@ public class Browser implements ChromeDevtoolsDomain {
     GetVersionResponse result = new GetVersionResponse();
     result.protocolVersion = "1.3";
     result.product = "Lumen";
-    result.revision = "0.3.0";
+    result.revision = BuildConfig.LUMEN_VERSION;
     result.userAgent = "Lumen (Android " + Build.VERSION.RELEASE +
         "; API " + Build.VERSION.SDK_INT +
         "; " + Build.MANUFACTURER + " " + Build.MODEL + ")";

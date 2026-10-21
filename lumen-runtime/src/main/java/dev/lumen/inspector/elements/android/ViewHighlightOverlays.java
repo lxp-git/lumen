@@ -7,7 +7,6 @@
 
 package dev.lumen.inspector.elements.android;
 
-import android.annotation.TargetApi;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.graphics.Region;
@@ -24,26 +23,9 @@ abstract class ViewHighlightOverlays {
   abstract void removeHighlight(View view);
 
   static ViewHighlightOverlays newInstance() {
-    // This may not be needed since ViewHighlighter.newInstance() is already instantiating a
-    // NoopHighlighter for SDK_INT < JELLY_BEAN_MR2, but just to make sure...
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-      return new ViewHighlightOverlaysJellybeanMR2();
-    }
-    return new NoOpViewHighlightOverlays();
+    return new ViewHighlightOverlaysJellybeanMR2();
   }
 
-  private static class NoOpViewHighlightOverlays extends ViewHighlightOverlays {
-
-    @Override
-    void highlightView(View view, Rect bounds, int mainColor) {
-    }
-
-    @Override
-    void removeHighlight(View view) {
-    }
-  }
-
-  @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
   private static class ViewHighlightOverlaysJellybeanMR2 extends ViewHighlightOverlays {
     private static final int MARGIN_OVERLAY_COLOR = 0xaaf4ca9e;
     private static final int PADDING_OVERLAY_COLOR = 0xaabedab6;

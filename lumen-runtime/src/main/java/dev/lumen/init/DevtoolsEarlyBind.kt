@@ -6,7 +6,7 @@ import dev.lumen.inspector.DeferredEndpoint
 import dev.lumen.inspector.DevtoolsSocketHandler
 import dev.lumen.server.AddressNameHelper
 import dev.lumen.server.LocalSocketServer
-import dev.lumen.server.ProtocolDetectingSocketHandler
+import dev.lumen.server.SecureSocketHandler
 import java.io.IOException
 
 /**
@@ -144,12 +144,7 @@ object DevtoolsEarlyBind {
     context: Context,
     handler: DevtoolsSocketHandler,
   ): LocalSocketServer {
-    val socketHandler = ProtocolDetectingSocketHandler(context)
-    socketHandler.addHandler(
-      ProtocolDetectingSocketHandler.AlwaysMatchMatcher(),
-      handler,
-    )
-    return LocalSocketServer("lumen", inspectAddress(), socketHandler)
+    return LocalSocketServer("lumen", inspectAddress(), SecureSocketHandler(context, handler))
   }
 
   private fun inspectAddress(): String =

@@ -7,14 +7,12 @@
 
 package dev.lumen.common.android;
 
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.Dialog;
 import android.app.DialogFragment;
 import android.app.Fragment;
 import android.app.FragmentManager;
 import android.content.res.Resources;
-import android.os.Build;
 import android.view.View;
 
 import javax.annotation.Nullable;
@@ -29,11 +27,7 @@ final class FragmentCompatFramework
       new FragmentActivityAccessorFramework();
 
   static {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-      sFragmentAccessor = new FragmentAccessorFrameworkJellyBean();
-    } else {
-      sFragmentAccessor = new FragmentAccessorFrameworkHoneycomb();
-    }
+    sFragmentAccessor = new FragmentAccessorFrameworkJellyBean();
 
     sDialogFragmentAccessor = new DialogFragmentAccessorFramework(sFragmentAccessor);
   }
@@ -110,7 +104,6 @@ final class FragmentCompatFramework
     }
   }
 
-  @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
   private static class FragmentAccessorFrameworkJellyBean
       extends FragmentAccessorFrameworkHoneycomb {
     @Nullable
