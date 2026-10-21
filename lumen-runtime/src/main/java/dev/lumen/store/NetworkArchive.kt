@@ -189,15 +189,28 @@ class NetworkArchive(
   /**
    * Sink for the response body of [requestId], written exactly as the app reads it and
    * capped at [LumenConfig.maxBodyBytes]. [contentEncoding] is the response's
-   * `Content-Encoding`; a supported one is reversed by [readBody], not here.
+   * `Content-Encoding`; [readBody] reverses it when it can. Null when the file cannot be
+   * created: capture is best effort and must never fail the app's request.
    */
-  fun openBodySink(requestId: String, contentEncoding: String?): OutputStream {
+  fun openBodySink(requestId: String, contentEncoding: String?): OutputStream? {
     val file = File(bodiesDir, "body-$requestId")
+    val raw = try {
+      file.outputStream()
+    } catch (_: IOException) {
+      // The app may have wiped filesDir (logout, "clear cache"): recreate once.
+      try {
+        bodiesDir.mkdirs()
+        file.outputStream()
+      } catch (e: IOException) {
+        LogRedirector.w(tag, "cannot spill body for $requestId", e)
+        return null
+      }
+    }
     update(requestId, persistMeta = false) {
       it.responseBodyPath = file.absolutePath
-      it.responseBodyEncoding = BodyCodec.supportedEncoding(contentEncoding)
+      it.responseBodyEncoding = BodyCodec.normalizeEncoding(contentEncoding)
     }
-    return object : FilterOutputStream(file.outputStream()) {
+    return object : FilterOutputStream(raw) {
       private var written = 0L
 
       override fun write(b: Int) {
@@ -224,20 +237,23 @@ class NetworkArchive(
 
   /**
    * The body of [requestId] for DevTools: decoded, then UTF-8 text when it looks like text
-   * (`second == false`) or base64 otherwise (`second == true`). Null when nothing was captured.
+   * (`second == false`) or base64 otherwise (`second == true`). A body in an encoding Lumen
+   * cannot reverse (e.g. brotli) is always base64. Null when nothing was captured.
    */
   fun readBody(requestId: String): Pair<String, Boolean>? {
     val record = get(requestId) ?: return null
     val file = record.responseBodyPath?.let(::File)?.takeIf { it.exists() } ?: return null
+    val encoding = record.responseBodyEncoding
+    val decodable = encoding == null || BodyCodec.supportedEncoding(encoding) != null
     val bytes = try {
       file.inputStream().use {
-        BodyCodec.decode(it, record.responseBodyEncoding, MAX_DECODED_BODY_FACTOR * config.maxBodyBytes)
+        BodyCodec.decode(it, encoding, MAX_DECODED_BODY_FACTOR * config.maxBodyBytes)
       }
     } catch (e: IOException) {
       LogRedirector.w(tag, "readBody failed for $requestId", e)
       return null
     }
-    return if (BodyCodec.isText(record.mimeType, bytes)) {
+    return if (decodable && BodyCodec.isText(record.mimeType, bytes)) {
       Pair(String(bytes, Charsets.UTF_8), false)
     } else {
       Pair(Base64.encodeToString(bytes, Base64.NO_WRAP), true)

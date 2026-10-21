@@ -25,6 +25,8 @@ import okio.source
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.zip.GZIPInputStream
+import java.util.zip.InflaterInputStream
 
 /**
  * Always-on OkHttp **application** interceptor: records every exchange into EventStore,
@@ -106,7 +108,7 @@ class LumenInterceptor : Interceptor {
         .request(request)
         .protocol(Protocol.HTTP_1_1)
         .code(rule.status)
-        .message("OK")
+        .message(reasonPhrase(rule.status))
         .body(bodyBytes.toResponseBody(media))
         .apply { rule.headers.forEach { (k, v) -> header(k, v) } }
         .build()
@@ -137,7 +139,7 @@ class LumenInterceptor : Interceptor {
             .request(request)
             .protocol(Protocol.HTTP_1_1)
             .code(decision.responseCode)
-            .message("OK")
+            .message(reasonPhrase(decision.responseCode))
             .body(decision.body.toResponseBody(media))
             .apply { decision.responseHeaders.forEach { (k, v) -> addHeader(k, v) } }
             .build()
@@ -239,7 +241,13 @@ class LumenInterceptor : Interceptor {
             .request(request)
             .protocol(response.protocol)
             .code(decision.responseCode)
-            .message(response.message.ifEmpty { "OK" })
+            .message(
+              if (decision.responseCode == response.code) {
+                response.message.ifEmpty { reasonPhrase(response.code) }
+              } else {
+                reasonPhrase(decision.responseCode)
+              },
+            )
             .body(decision.body.toResponseBody(media))
             .apply { decision.responseHeaders.forEach { (k, v) -> addHeader(k, v) } }
             .build()
@@ -364,7 +372,7 @@ class LumenInterceptor : Interceptor {
   ) {
     store?.network?.update(requestId) {
       it.statusCode = status
-      it.statusText = "OK"
+      it.statusText = reasonPhrase(status)
       it.responseHeaders = headers
       it.mimeType = headers["Content-Type"] ?: "application/octet-stream"
       it.finishedAtMs = System.currentTimeMillis()
@@ -424,10 +432,52 @@ class LumenInterceptor : Interceptor {
     return try {
       val buffer = Buffer()
       body.writeTo(buffer)
-      buffer.readString(minOf(buffer.size, maxBytes), Charsets.UTF_8)
+      // Apps that gzip their own uploads: show the payload, not the compressed bytes.
+      val encoding = request.header("Content-Encoding")?.trim()?.lowercase()
+      val source = when (encoding) {
+        "gzip" -> GZIPInputStream(buffer.inputStream())
+        "deflate" -> InflaterInputStream(buffer.inputStream())
+        else -> return buffer.readString(minOf(buffer.size, maxBytes), Charsets.UTF_8)
+      }
+      source.use { String(it.readBytesCapped(maxBytes), Charsets.UTF_8) }
     } catch (_: Exception) {
       null
     }
+  }
+
+  private fun InputStream.readBytesCapped(max: Long): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val chunk = ByteArray(8 * 1024)
+    while (out.size() < max) {
+      val n = read(chunk, 0, minOf(chunk.size.toLong(), max - out.size()).toInt())
+      if (n < 0) break
+      out.write(chunk, 0, n)
+    }
+    return out.toByteArray()
+  }
+
+  /** Mocked and overridden responses get the standard phrase for their code, not "OK". */
+  private fun reasonPhrase(code: Int): String = when (code) {
+    200 -> "OK"
+    201 -> "Created"
+    202 -> "Accepted"
+    204 -> "No Content"
+    301 -> "Moved Permanently"
+    302 -> "Found"
+    304 -> "Not Modified"
+    400 -> "Bad Request"
+    401 -> "Unauthorized"
+    403 -> "Forbidden"
+    404 -> "Not Found"
+    409 -> "Conflict"
+    418 -> "I'm a teapot"
+    422 -> "Unprocessable Entity"
+    429 -> "Too Many Requests"
+    500 -> "Internal Server Error"
+    502 -> "Bad Gateway"
+    503 -> "Service Unavailable"
+    504 -> "Gateway Timeout"
+    else -> ""
   }
 
   private companion object {

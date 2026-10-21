@@ -23,7 +23,10 @@ data class NetworkRecord(
   var encodedDataLength: Long = 0,
   /** Spilled body file, exactly as the app received it (see [responseBodyEncoding]). */
   var responseBodyPath: String? = null,
-  /** `gzip` / `deflate` when the app negotiated compression itself and the body is still encoded. */
+  /**
+   * The response's `Content-Encoding` when the app negotiated compression itself and the
+   * body is still encoded (null = identity). gzip / deflate are decoded on read.
+   */
   var responseBodyEncoding: String? = null,
   var mocked: Boolean = false,
   var resourceType: String = "Other",

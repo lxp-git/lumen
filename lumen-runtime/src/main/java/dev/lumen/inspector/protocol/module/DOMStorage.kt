@@ -191,10 +191,6 @@ class DOMStorage(context: Context) : ChromeDevtoolsDomain {
     @JvmField @JsonProperty(required = true) val entries: List<List<String>>,
   ) : JsonRpcResult
 
-  class DomStorageItemsClearedParams {
-    @JvmField @JsonProperty(required = true) var storageId: StorageId? = null
-  }
-
   class DomStorageItemRemovedParams {
     @JvmField @JsonProperty(required = true) var storageId: StorageId? = null
     @JvmField @JsonProperty(required = true) var key: String? = null

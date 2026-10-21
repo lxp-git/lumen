@@ -41,8 +41,10 @@ internal class JsonlAppender(
       }
       queue.drainTo(batch)
       try {
-        val w = writer ?: BufferedWriter(OutputStreamWriter(FileOutputStream(file, true), Charsets.UTF_8))
-          .also { writer = it }
+        val w = writer ?: run {
+          file.parentFile?.mkdirs() // the app may have wiped filesDir since the last batch
+          BufferedWriter(OutputStreamWriter(FileOutputStream(file, true), Charsets.UTF_8))
+        }.also { writer = it }
         for (line in batch) {
           w.write(line)
           w.write('\n'.code)

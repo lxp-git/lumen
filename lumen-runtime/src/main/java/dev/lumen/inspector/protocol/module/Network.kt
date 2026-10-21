@@ -601,12 +601,6 @@ class Network(
     @JvmField @JsonProperty(required = true) var response: WebSocketFrame? = null
   }
 
-  class WebSocketFrameSentParams {
-    @JvmField @JsonProperty(required = true) var requestId: String? = null
-    @JvmField @JsonProperty(required = true) var timestamp: Double = 0.0
-    @JvmField @JsonProperty(required = true) var response: WebSocketFrame? = null
-  }
-
   class WebSocketFrame {
     @JvmField @JsonProperty(required = true) var opcode: Int = 0
     @JvmField @JsonProperty(required = true) var mask: Boolean = false

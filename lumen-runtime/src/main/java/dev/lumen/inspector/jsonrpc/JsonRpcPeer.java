@@ -111,14 +111,15 @@ public class JsonRpcPeer {
     return mWsCreatedIds.add(requestId);
   }
 
-  /**
-   * @return true if this is the first WebSocket transcript XHR for {@code requestId}
-   *     on this peer.
-   */
+  /** Whether the WebSocket transcript XHR for {@code requestId} was already sent to this peer. */
   public synchronized boolean hasWsTranscript(String requestId) {
     return mWsTranscriptIds.contains(requestId);
   }
 
+  /**
+   * @return true if this is the first WebSocket transcript XHR for {@code requestId}
+   *     on this peer.
+   */
   public synchronized boolean markWsTranscript(String requestId) {
     return mWsTranscriptIds.add(requestId);
   }

@@ -31,11 +31,12 @@ class SqliteDatabaseDriver(private val context: Context) {
   @Throws(SQLiteException::class)
   fun <T> executeSQL(databaseFile: File, query: String, handler: ExecuteResultHandler<T>): T =
     openDatabase(databaseFile).use { db ->
-      when (query.trim().substringBefore(' ').uppercase(Locale.ROOT)) {
+      when (firstKeyword(query)) {
         "UPDATE", "DELETE" ->
           handler.handleUpdateDelete(db.compileStatement(query).executeUpdateDelete())
-        "INSERT" -> handler.handleInsert(db.compileStatement(query).executeInsert())
-        "SELECT", "PRAGMA", "EXPLAIN" -> db.rawQuery(query, null).use(handler::handleSelect)
+        "INSERT", "REPLACE" -> handler.handleInsert(db.compileStatement(query).executeInsert())
+        "SELECT", "PRAGMA", "EXPLAIN", "WITH", "VALUES" ->
+          db.rawQuery(query, null).use(handler::handleSelect)
         else -> {
           db.execSQL(query)
           handler.handleRawQuery()
@@ -59,6 +60,11 @@ class SqliteDatabaseDriver(private val context: Context) {
 
   internal companion object {
     private val SHADOW_SUFFIXES = listOf("-journal", "-shm", "-uid", "-wal")
+    private val LEADING_COMMENTS = Regex("""^(\s+|--[^\n]*\n?|/\*.*?\*/)*""", RegexOption.DOT_MATCHES_ALL)
+
+    /** First keyword, past whitespace (including newlines) and SQL comments. */
+    fun firstKeyword(query: String): String =
+      query.replaceFirst(LEADING_COMMENTS, "").takeWhile { it.isLetter() }.uppercase(Locale.ROOT)
 
     /** Drops a file only when it shadows another listed file that lacks the suffix. */
     fun tidyDatabaseList(files: List<File>): List<File> {

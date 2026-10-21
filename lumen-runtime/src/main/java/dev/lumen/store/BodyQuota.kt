@@ -29,8 +29,8 @@ internal object BodyQuota {
 /**
  * Runs [prune] off the caller's thread, coalescing bursts into at most one queued pass.
  *
- * Body sinks close on the HTTP client's worker thread, before the response reaches the app; a
- * directory scan there delays every callback of the inspected app. The flag is cleared before a
+ * Body sinks close on whichever thread the app reads the response on (often the HTTP client's
+ * worker); a directory scan there would delay the inspected app. The flag is cleared before a
  * pass starts so that a body closed during that pass still gets its own follow-up pass.
  */
 internal class BodyPruneScheduler(

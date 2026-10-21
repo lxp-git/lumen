@@ -29,6 +29,18 @@ class BodyCodecTest {
   }
 
   @Test
+  fun identityAndBlankMeanNoEncoding() {
+    assertNull(BodyCodec.normalizeEncoding("identity"))
+    assertNull(BodyCodec.normalizeEncoding(" "))
+    assertEquals("br", BodyCodec.normalizeEncoding("BR"))
+  }
+
+  @Test
+  fun emptyGzipBodyDecodesToNothing() {
+    assertEquals(0, BodyCodec.decode(ByteArrayInputStream(ByteArray(0)), "gzip", 1_000).size)
+  }
+
+  @Test
   fun passesPlainBodiesThrough() {
     assertArrayEquals(json, BodyCodec.decode(ByteArrayInputStream(json), null, 1_000))
   }

@@ -147,7 +147,16 @@ class LogArchive(
         (contains.isNullOrEmpty() || entry.text.contains(contains, ignoreCase = true)) &&
         (excludes.isNullOrEmpty() || !entry.text.contains(excludes, ignoreCase = true))
 
-    val (tail, segments) = synchronized(lock) { ArrayList(pending) to listSegmentFilesLocked() }
+    // The newest segment's length is pinned too: a flush during the read appends the
+    // snapshotted `pending` lines to it, and they must not be counted twice.
+    val tail: List<LogEntry>
+    val segments: List<File>
+    val newestLength: Long
+    synchronized(lock) {
+      tail = ArrayList(pending)
+      segments = listSegmentFilesLocked()
+      newestLength = segments.lastOrNull()?.length() ?: 0L
+    }
     val newestFirst = ArrayList<LogEntry>()
     var scanned = 0
     fun scan(entries: List<LogEntry>): Boolean {
@@ -160,8 +169,9 @@ class LogArchive(
       return true
     }
     if (scan(tail)) {
-      for (segment in segments.asReversed()) {
-        if (!scan(readSegment(segment))) break
+      for ((i, segment) in segments.asReversed().withIndex()) {
+        val entries = if (i == 0) readSegment(segment, newestLength) else readSegment(segment)
+        if (!scan(entries)) break
       }
     }
     return newestFirst.asReversed()
@@ -247,6 +257,7 @@ class LogArchive(
   }
 
   private fun flushLocked() {
+    root.mkdirs() // the app may have wiped filesDir
     val file = segmentFile(currentSegmentIndex) ?: return
     try {
       file.appendText(buildString {
@@ -276,10 +287,16 @@ class LogArchive(
   private fun encode(entry: LogEntry): String =
     JSONArray().put(entry.timestampMs).put(entry.level).put(entry.text).toString()
 
-  private fun readSegment(file: File): List<LogEntry> {
+  /** Entries of [file], reading only its first [maxBytes] when given. */
+  private fun readSegment(file: File, maxBytes: Long = Long.MAX_VALUE): List<LogEntry> {
     val out = ArrayList<LogEntry>()
     try {
-      file.forEachLine { line ->
+      val reader = if (maxBytes == Long.MAX_VALUE) {
+        file.bufferedReader()
+      } else {
+        BoundedInputStream(file.inputStream(), maxBytes).bufferedReader()
+      }
+      reader.forEachLine { line ->
         try {
           val arr = JSONArray(line)
           out.add(LogEntry(arr.getDouble(0), arr.getString(1), arr.getString(2)))
@@ -357,5 +374,25 @@ class LogArchive(
     /** Spill promptly so short debug sessions still leave files on disk. */
     private const val FLUSH_EVERY = 50
     private const val SEGMENT_MAX_LINES = 25_000
+  }
+
+  /** Stops after [limit] bytes so a file appended to mid-read yields a stable prefix. */
+  private class BoundedInputStream(
+    input: java.io.InputStream,
+    private var remaining: Long,
+  ) : java.io.FilterInputStream(input) {
+    override fun read(): Int {
+      if (remaining <= 0) return -1
+      val b = super.read()
+      if (b >= 0) remaining--
+      return b
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+      if (remaining <= 0) return -1
+      val n = super.read(b, off, minOf(len.toLong(), remaining).toInt())
+      if (n > 0) remaining -= n
+      return n
+    }
   }
 }

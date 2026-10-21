@@ -15,7 +15,6 @@ import dev.lumen.common.LogUtil;
 import dev.lumen.common.Util;
 import dev.lumen.inspector.database.SqliteDatabaseDriver;
 import dev.lumen.inspector.helper.ChromePeerManager;
-import dev.lumen.inspector.helper.ObjectIdMapper;
 import dev.lumen.inspector.helper.PeersRegisteredListener;
 import dev.lumen.inspector.jsonrpc.JsonRpcException;
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer;
@@ -33,7 +32,9 @@ import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
@@ -235,8 +236,12 @@ public class Database implements ChromeDevtoolsDomain {
     @GuardedBy("this")
     private final SparseArray<File> mDatabaseFiles = new SparseArray<>();
 
+    /** Keyed by path: every scan builds new File objects, so identity cannot dedupe them. */
     @GuardedBy("this")
-    private final ObjectIdMapper mDatabaseIdMapper = new ObjectIdMapper();
+    private final Map<String, Integer> mIdsByPath = new HashMap<>();
+
+    @GuardedBy("this")
+    private int mNextId = 1;
 
     private DatabasePeerRegistrationListener(SqliteDatabaseDriver driver, String packageName) {
       mDriver = driver;
@@ -247,25 +252,26 @@ public class Database implements ChromeDevtoolsDomain {
       return mDatabaseFiles.get(Integer.parseInt(databaseId));
     }
 
-    @Override
-    protected synchronized void onFirstPeerRegistered() {
-      refreshDatabaseFiles();
-    }
-
-    /** Ids are stable per file; databases created since the last scan get new ones. */
+    /** Ids are stable per path; databases created since the last scan get new ones. */
     private void refreshDatabaseFiles() {
       for (File file : mDriver.getDatabaseFiles()) {
-        Integer databaseId = mDatabaseIdMapper.getIdForObject(file);
-        if (databaseId == null) {
-          databaseId = mDatabaseIdMapper.putObject(file);
-          mDatabaseFiles.put(databaseId, file);
+        String path = file.getAbsolutePath();
+        if (!mIdsByPath.containsKey(path)) {
+          int id = mNextId++;
+          mIdsByPath.put(path, id);
+          mDatabaseFiles.put(id, file);
         }
       }
     }
 
     @Override
+    protected synchronized void onFirstPeerRegistered() {
+      // onPeerAdded follows for this peer and scans.
+    }
+
+    @Override
     protected synchronized void onLastPeerUnregistered() {
-      mDatabaseIdMapper.clear();
+      mIdsByPath.clear();
       mDatabaseFiles.clear();
     }
 

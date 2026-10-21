@@ -17,9 +17,13 @@ import java.util.zip.InflaterInputStream
  * opens the body.
  */
 internal object BodyCodec {
+  /** Lower-cased `Content-Encoding`, or null for none / `identity`. */
+  fun normalizeEncoding(contentEncoding: String?): String? =
+    contentEncoding?.trim()?.lowercase()?.takeUnless { it.isEmpty() || it == "identity" }
+
   /** `Content-Encoding` values [decode] can reverse; anything else is stored and shown as-is. */
   fun supportedEncoding(contentEncoding: String?): String? {
-    val encoding = contentEncoding?.trim()?.lowercase() ?: return null
+    val encoding = normalizeEncoding(contentEncoding) ?: return null
     return if (encoding == "gzip" || encoding == "deflate") encoding else null
   }
 
@@ -29,21 +33,28 @@ internal object BodyCodec {
    * decoded before that point is returned.
    */
   fun decode(input: InputStream, contentEncoding: String?, maxBytes: Long): ByteArray {
-    val source = when (supportedEncoding(contentEncoding)) {
-      "gzip" -> GZIPInputStream(input)
-      "deflate" -> InflaterInputStream(input)
-      else -> input
+    val source = try {
+      when (supportedEncoding(contentEncoding)) {
+        "gzip" -> GZIPInputStream(input)
+        "deflate" -> InflaterInputStream(input)
+        else -> input
+      }
+    } catch (_: IOException) {
+      return ByteArray(0) // not even a valid gzip header
     }
     val out = ByteArrayOutputStream()
     val buffer = ByteArray(8 * 1024)
-    try {
-      while (out.size() < maxBytes) {
-        val n = source.read(buffer, 0, minOf(buffer.size.toLong(), maxBytes - out.size()).toInt())
-        if (n < 0) break
-        out.write(buffer, 0, n)
+    // `use` ends the Inflater now instead of leaving its native memory to the finalizer.
+    source.use {
+      try {
+        while (out.size() < maxBytes) {
+          val n = it.read(buffer, 0, minOf(buffer.size.toLong(), maxBytes - out.size()).toInt())
+          if (n < 0) break
+          out.write(buffer, 0, n)
+        }
+      } catch (_: IOException) {
+        // Truncated or corrupt compressed tail: keep what decoded cleanly.
       }
-    } catch (_: IOException) {
-      // Truncated or corrupt compressed tail: keep what decoded cleanly.
     }
     return out.toByteArray()
   }
