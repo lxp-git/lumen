@@ -212,13 +212,17 @@ internal object DataStoreAccess {
       val fields = declaredFieldsOrNull(clazz) ?: continue
       for (field in fields) {
         if (!Modifier.isStatic(field.modifiers)) continue
-        if (!looksLikeDataStore(field.type)) continue
+        // `val Context.prefs by preferencesDataStore(...)` compiles to a static
+        // `prefs$delegate` typed ReadOnlyProperty; only its runtime class says DataStore.
+        val propertyDelegate = isPropertyDelegate(field)
+        if (!propertyDelegate && !looksLikeDataStore(field.type)) continue
         val raw = try {
           field.isAccessible = true
           field.get(null)
         } catch (_: Throwable) {
           null
         } ?: continue
+        if (propertyDelegate && !looksLikeDataStore(raw.javaClass)) continue
         rememberDelegate(raw)
         val store = unwrapDelegate(raw) ?: continue
         val impl = unwrap(store)
@@ -283,6 +287,9 @@ internal object DataStoreAccess {
     }
     return false
   }
+
+  private fun isPropertyDelegate(field: Field): Boolean =
+    field.name.endsWith("\$delegate") && field.type.name == "kotlin.properties.ReadOnlyProperty"
 
   private fun isDataStoreTypeName(name: String): Boolean {
     if (name == "androidx.datastore.core.DataStore" || name.endsWith(".DataStore")) return true
@@ -350,6 +357,10 @@ internal object DataStoreAccess {
       field(storage.javaClass, "produceFile")?.get(storage)?.let { fn ->
         return invokeFile(fn)
       }
+      // DataStore 1.1+ Preferences: OkioStorage(producePath: () -> okio.Path).
+      field(storage.javaClass, "producePath")?.get(storage)?.let { fn ->
+        return invokePath(fn)
+      }
     }
     field(impl.javaClass, "file")?.let { f ->
       return f.get(impl) as? File
@@ -360,6 +371,15 @@ internal object DataStoreAccess {
   private fun invokeFile(fn: Any): File? {
     return try {
       fn.javaClass.getMethod("invoke").invoke(fn) as? File
+    } catch (_: Throwable) {
+      null
+    }
+  }
+
+  /** okio.Path's toString() is the platform path. */
+  private fun invokePath(fn: Any): File? {
+    return try {
+      fn.javaClass.getMethod("invoke").invoke(fn)?.let { File(it.toString()) }
     } catch (_: Throwable) {
       null
     }

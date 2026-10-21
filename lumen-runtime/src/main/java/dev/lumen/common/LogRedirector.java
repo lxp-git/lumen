@@ -88,9 +88,13 @@ public class LogRedirector {
   }
 
   private static String formatThrowable(Throwable t) {
+    // Stack traces are costly to format; skip it when nothing will be logged.
+    if (!sEnabled) {
+      return "";
+    }
     StringWriter buf = new StringWriter();
     PrintWriter writer = new PrintWriter(buf);
-    t.printStackTrace();
+    t.printStackTrace(writer);
     writer.flush();
     return buf.toString();
   }

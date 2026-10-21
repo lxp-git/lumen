@@ -249,6 +249,11 @@ public class Database implements ChromeDevtoolsDomain {
 
     @Override
     protected synchronized void onFirstPeerRegistered() {
+      refreshDatabaseFiles();
+    }
+
+    /** Ids are stable per file; databases created since the last scan get new ones. */
+    private void refreshDatabaseFiles() {
       for (File file : mDriver.getDatabaseFiles()) {
         Integer databaseId = mDatabaseIdMapper.getIdForObject(file);
         if (databaseId == null) {
@@ -266,6 +271,7 @@ public class Database implements ChromeDevtoolsDomain {
 
     @Override
     protected synchronized void onPeerAdded(JsonRpcPeer peer) {
+      refreshDatabaseFiles();
       for (int i = 0, N = mDatabaseFiles.size(); i < N; i++) {
         Database.DatabaseObject databaseParams = new Database.DatabaseObject();
         databaseParams.id = String.valueOf(mDatabaseFiles.keyAt(i));

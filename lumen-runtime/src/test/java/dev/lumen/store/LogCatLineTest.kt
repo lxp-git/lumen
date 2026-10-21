@@ -47,6 +47,8 @@ class LogCatLineTest {
     assertTrue(LogCatLine.isSuppressedTag("CLog"))
     assertTrue(LogCatLine.isSuppressedTag("MockEngine"))
     assertFalse(LogCatLine.isSuppressedTag("FGAppsFlyer"))
+    // An app's own tag that happens to start with "Lumen" must stay visible.
+    assertFalse(LogCatLine.isSuppressedTag("LumenSample"))
     assertNull(
       LogCatLine.parse(
         "1787041095.123  5194  6109 I LumenFetch: resume fetchId=1 decision=Continue",

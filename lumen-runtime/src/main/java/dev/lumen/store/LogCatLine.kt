@@ -12,20 +12,24 @@ internal object LogCatLine {
   private val linePattern =
     Regex("""^\s*(\d+)\.(\d+)\s+(\d+)\s+(\d+)\s+([VDIWEFS])\s+(.*?)\s*: (.*)$""")
 
+  /**
+   * Tags Lumen itself logs under (only when `lumen { debugLogs = true }`). Matched exactly:
+   * an app tag that merely starts with "Lumen" is the app's, not ours.
+   */
   private val suppressedTags = setOf(
-    "ChromePeerManager",
-    "LogArchive",
-    "NetworkArchive",
-    "ChromeDevtoolsServer",
-    "MethodDispatcher",
-    "DumpappSocketLikeHandler",
-    "LightHttpServer",
-    "JsonRpcPeer",
-    "WebSocketSession",
-    "CLog",
     "lumen",
-    "stetho",
+    "Lumen",
+    "LumenCDP",
+    "LumenFetch",
+    "LumenLog",
+    "LumenWS",
+    "ChromeDevtoolsServer",
+    "ChromePeerManager",
+    "CLog",
+    "LightHttpServer",
+    "LogArchive",
     "MockEngine",
+    "NetworkArchive",
     "NetworkEventReporter",
   )
 
@@ -35,8 +39,7 @@ internal object LogCatLine {
    */
   fun chromeLevel(level: String): String = if (level == "verbose") "info" else level
 
-  fun isSuppressedTag(tag: String): Boolean =
-    tag in suppressedTags || tag.startsWith("Lumen")
+  fun isSuppressedTag(tag: String): Boolean = tag in suppressedTags
 
   fun parse(line: String, lastTimestampMs: Double): LogEntry? {
     if (line.isEmpty() || line.startsWith("---------")) return null

@@ -83,7 +83,14 @@ class DOMStorage(context: Context) : ChromeDevtoolsDomain {
     val key = params?.getString("key").orEmpty()
     if (!storage.isLocalStorage) return
     val resolved = resolveKey(storage, key)
-    catalog.remove(resolved.ref, resolved.entryKey)
+    if (!catalog.remove(resolved.ref, resolved.entryKey)) {
+      CLog.writeToConsole(
+        peerManager,
+        Console.MessageLevel.ERROR,
+        Console.MessageSource.STORAGE,
+        "Failed to remove $key",
+      )
+    }
   }
 
   @ChromeDevtoolsMethod
