@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Check out skydoves/Pokedex at a pinned commit and add Lumen to it.
 #
-#   examples/pokedex/setup.sh           # released plugin from the Gradle Plugin Portal
-#   examples/pokedex/setup.sh --local   # publish this checkout first and build against it
+#   examples/pokedex/setup.sh              # build against this checkout (scripts/publish-local.sh)
+#   examples/pokedex/setup.sh --released   # released plugin from the Gradle Plugin Portal
+#
+# Pokedex has minSdk 23; Lumen 0.3.0 requires 24, so --released needs a later release.
 #
 # The checkout lands in examples/pokedex/build/Pokedex (git-ignored); override with
 # POKEDEX_DIR. Re-running resets that checkout to the pinned commit.
@@ -13,11 +15,11 @@ repo_root="$(cd "$here/../.." && pwd)"
 dest="${POKEDEX_DIR:-$here/build/Pokedex}"
 commit="ea106d5cd8f8f78fa0e5077a60a88ab5b5877694"  # skydoves/Pokedex main, 2026-10-20
 
-local_build=0
+local_build=1
 case "${1:-}" in
-  --local) local_build=1 ;;
-  "") ;;
-  *) echo "usage: $0 [--local]" >&2; exit 2 ;;
+  --released) local_build=0 ;;
+  --local | "") ;;
+  *) echo "usage: $0 [--released]" >&2; exit 2 ;;
 esac
 
 if [[ ! -d "$dest/.git" ]]; then

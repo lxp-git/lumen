@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 base=$(sed -n 's/^LUMEN_VERSION=//p' gradle.properties)
 version="${1:-${base}-local}"
-./gradlew -q --no-configuration-cache "-Plumen.version=${version}" \
+./gradlew -q --no-configuration-cache "-Plumen.localVersion=${version}" \
   :lumen-gradle-plugin:publishAllPublicationsToLumenRepository \
   :lumen-runtime:publishAllPublicationsToLumenRepository \
   :lumen-okhttp:publishAllPublicationsToLumenRepository

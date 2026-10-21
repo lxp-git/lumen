@@ -24,7 +24,8 @@ ext {
     okhttpVersion = '4.12.0'
     lumenGroup = LUMEN_GROUP
     lumenMavenGroup = LUMEN_MAVEN_GROUP
-    // -Plumen.version=X publishes unsigned under version X (scripts/publish-local.sh).
-    lumenVersion = findProperty('lumen.version') ?: LUMEN_VERSION
-    lumenLocalPublish = findProperty('lumen.version') != null
+    // -Plumen.localVersion=X builds an unsigned local copy under version X
+    // (scripts/publish-local.sh). Releases never set it; they are signed for Central.
+    lumenVersion = findProperty('lumen.localVersion') ?: LUMEN_VERSION
+    lumenLocalPublish = findProperty('lumen.localVersion') != null
 }

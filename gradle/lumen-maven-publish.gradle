@@ -56,9 +56,11 @@ if (rootProject.ext.lumenLocalPublish) {
     // Local copies ship an empty javadoc jar: Dokka is slow and only Central needs docs.
     tasks.matching { it.name.startsWith('javaDoc') && it.name.endsWith('Generation') }
         .configureEach { enabled = false }
+    tasks.withType(AbstractArchiveTask).matching { it.name.startsWith('javaDoc') }
+        .configureEach { exclude '**' } // no stale docs from an earlier full build
 }
 
-// Same directory the Gradle plugin publishes to (lumen-gradle-plugin/build.gradle).
+// build/maven-repo, the plugin's default repository too (lumen-gradle-plugin/build.gradle).
 publishing {
     repositories {
         maven {

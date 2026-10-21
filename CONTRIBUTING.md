@@ -16,8 +16,8 @@ python3 -m unittest discover -s plugins/lumen/tests
 ```
 
 To try a change in another app, `./scripts/publish-local.sh` and add `build/maven-repo` as
-the first repository there (the script prints how). `examples/pokedex/setup.sh --local` does
-this for Pokedex.
+the first repository there (the script prints how). `examples/pokedex/setup.sh` does this for
+Pokedex.
 
 ## Guidelines
 
@@ -30,6 +30,15 @@ this for Pokedex.
 - Keep the release variant clean: nothing may make Lumen reach a non-debuggable build.
 - Two-space indentation, 100 columns. One logical change per commit, with a message that says
   why.
+
+## Releasing
+
+`LUMEN_VERSION` in `gradle.properties` is the only version the build reads. The docs quote it
+too; update them in the same commit: `README.md`, `plugins/lumen/skills/lumen/SKILL.md`,
+`plugins/lumen/skills/lumen/references/setup.md`, `plugins/lumen/.claude-plugin/plugin.json`,
+`examples/pokedex/lumen.patch`, and move `CHANGELOG.md`'s Unreleased section under the new
+version. Then publish the plugin (`./gradlew :lumen-gradle-plugin:publishPlugins`) and the
+AARs (see `gradle/lumen-maven-publish.gradle`).
 
 ## License
 

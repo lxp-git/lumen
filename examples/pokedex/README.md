@@ -29,13 +29,17 @@ That is [`lumen.patch`](lumen.patch). The two files in [`lumen-mocks/`](lumen-mo
 ## Run it
 
 ```bash
-./examples/pokedex/setup.sh          # pinned upstream commit + the released plugin
-./examples/pokedex/setup.sh --local  # same, but against this checkout (scripts/publish-local.sh)
+./examples/pokedex/setup.sh             # pinned upstream commit + this checkout of Lumen
+./examples/pokedex/setup.sh --released  # same, with the plugin from the Gradle Plugin Portal
 
 cd examples/pokedex/build/Pokedex
 ./gradlew :app:installDebug          # JDK 17+, Android SDK with API 37
 adb shell monkey -p com.skydoves.pokedex -c android.intent.category.LAUNCHER 1
 ```
+
+The default publishes this checkout to `build/maven-repo` first
+([`scripts/publish-local.sh`](../../scripts/publish-local.sh)). `--released` only works with a
+Lumen release after 0.3.0: Pokedex has minSdk 23, and 0.3.0 required 24.
 
 `setup.sh` also applies [`upstream-compile-sdk.patch`](upstream-compile-sdk.patch), which has
 nothing to do with Lumen: Pokedex's `main` currently fails its own CI because Glide 5 and
