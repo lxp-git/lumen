@@ -4,6 +4,8 @@
 //   ./gradlew :lumen-runtime:publishAndReleaseToMavenCentral \
 //             :lumen-okhttp:publishAndReleaseToMavenCentral \
 //             --no-configuration-cache
+//
+// scripts/publish-local.sh publishes unsigned copies to build/maven-repo instead.
 
 apply plugin: 'com.vanniktech.maven.publish'
 
@@ -12,7 +14,9 @@ version = rootProject.ext.lumenVersion
 
 mavenPublishing {
     publishToMavenCentral()
-    signAllPublications()
+    if (!rootProject.ext.lumenLocalPublish) {
+        signAllPublications()
+    }
     coordinates(rootProject.ext.lumenMavenGroup, project.name, rootProject.ext.lumenVersion.toString())
     pom {
         name = project.name
@@ -42,6 +46,24 @@ mavenPublishing {
 }
 
 // GnuPG 2.4 keyring is not a BC secring; sign with the gpg binary.
-signing {
-    useGpgCmd()
+if (!rootProject.ext.lumenLocalPublish) {
+    signing {
+        useGpgCmd()
+    }
+}
+
+if (rootProject.ext.lumenLocalPublish) {
+    // Local copies ship an empty javadoc jar: Dokka is slow and only Central needs docs.
+    tasks.matching { it.name.startsWith('javaDoc') && it.name.endsWith('Generation') }
+        .configureEach { enabled = false }
+}
+
+// Same directory the Gradle plugin publishes to (lumen-gradle-plugin/build.gradle).
+publishing {
+    repositories {
+        maven {
+            name = 'Lumen'
+            url = rootProject.layout.buildDirectory.dir('maven-repo')
+        }
+    }
 }

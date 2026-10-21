@@ -12,7 +12,9 @@ if (parentFile.exists()) {
 // Plugin Portal requires plugin id and group to share a namespace we own.
 // Gradle rejected `dev.lumen` without a lumen.dev TXT record; GitHub namespace is allowed.
 group = parentProps.getProperty('LUMEN_GROUP', 'io.github.lxp-git')
-version = parentProps.getProperty('LUMEN_VERSION', findProperty('version') ?: '0.1.0')
+// The single version source is the root gradle.properties; -Plumen.version overrides it
+// for local publishing (scripts/publish-local.sh).
+version = findProperty('lumen.version') ?: parentProps.getProperty('LUMEN_VERSION')
 def lumenMavenGroup = parentProps.getProperty('LUMEN_MAVEN_GROUP', 'io.github.lxp-git')
 def lumenPluginId = parentProps.getProperty('LUMEN_PLUGIN_ID', 'io.github.lxp-git.lumen')
 
