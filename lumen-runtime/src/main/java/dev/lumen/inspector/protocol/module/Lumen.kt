@@ -214,14 +214,15 @@ class Lumen(
 
   /**
    * Logcat search over the live tail and archived segments (newest `limit` matches, oldest
-   * first). Filters: `contains` (case-insensitive), `level` (minimum: verbose, info,
-   * warning, error), `sinceMs` (epoch millis).
+   * first). Filters: `contains` / `excludes` (case-insensitive substrings), `level` (minimum:
+   * verbose, info, warning, error), `sinceMs` (epoch millis).
    */
   @ChromeDevtoolsMethod
   fun getLogs(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
     val entries = store.logs.query(
       limit = (params?.optInt("limit", 200) ?: 200).coerceIn(1, 10_000),
       contains = params?.optString("contains")?.takeIf { it.isNotEmpty() },
+      excludes = params?.optString("excludes")?.takeIf { it.isNotEmpty() },
       minLevel = params?.optString("level")?.takeIf { it.isNotEmpty() },
       sinceMs = params?.optDouble("sinceMs")?.takeUnless { it.isNaN() },
     )

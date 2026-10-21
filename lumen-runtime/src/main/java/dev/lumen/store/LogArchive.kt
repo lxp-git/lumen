@@ -135,6 +135,7 @@ class LogArchive(
   fun query(
     limit: Int,
     contains: String? = null,
+    excludes: String? = null,
     minLevel: String? = null,
     sinceMs: Double? = null,
     maxScan: Int = DEFAULT_MAX_SCAN,
@@ -143,7 +144,8 @@ class LogArchive(
     fun matches(entry: LogEntry): Boolean =
       levelRank(entry.level) >= minRank &&
         (sinceMs == null || entry.timestampMs >= sinceMs) &&
-        (contains.isNullOrEmpty() || entry.text.contains(contains, ignoreCase = true))
+        (contains.isNullOrEmpty() || entry.text.contains(contains, ignoreCase = true)) &&
+        (excludes.isNullOrEmpty() || !entry.text.contains(excludes, ignoreCase = true))
 
     val (tail, segments) = synchronized(lock) { ArrayList(pending) to listSegmentFilesLocked() }
     val newestFirst = ArrayList<LogEntry>()
