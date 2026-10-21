@@ -1,0 +1,13 @@
+{
+  "name": "lumen",
+  "description": "Debug Android debug builds through Lumen over adb: captured OkHttp/WebSocket/Socket.IO traffic, logcat history, SharedPreferences/DataStore/MMKV, SQLite, the View tree and mock responses.",
+  "version": "0.3.0",
+  "author": {
+    "name": "lxp-git",
+    "url": "https://github.com/lxp-git"
+  },
+  "homepage": "https://github.com/lxp-git/lumen",
+  "repository": "https://github.com/lxp-git/lumen",
+  "license": "MIT",
+  "keywords": ["android", "debugging", "okhttp", "chrome-devtools", "adb"]
+}

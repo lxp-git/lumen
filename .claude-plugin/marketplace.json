@@ -1,0 +1,17 @@
+{
+  "name": "lumen",
+  "owner": {
+    "name": "lxp-git",
+    "url": "https://github.com/lxp-git"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for Lumen, the Chrome DevTools agent for Android debug builds."
+  },
+  "plugins": [
+    {
+      "name": "lumen",
+      "source": "./plugins/lumen",
+      "description": "Inspect and drive a Lumen-enabled Android app over adb: network, logs, key-value stores, SQLite, View tree, mocks."
+    }
+  ]
+}
