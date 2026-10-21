@@ -64,8 +64,9 @@ internal class EngineIoSessionTable(
     val origin = EngineIoPayload.originKey(session.url)
     session.sid = sid
     session.lastSeenMs = nowMs()
-    pendingByOrigin.remove(origin, session)
-    byOriginAndSid.putIfAbsent(sidKey(origin, sid), session)
+    pendingByOrigin.removeIfMapped(origin, session)
+    val key = sidKey(origin, sid)
+    if (key !in byOriginAndSid) byOriginAndSid[key] = session
   }
 
   /** Stale and overflow sessions the caller should close in Chrome. */
@@ -93,8 +94,8 @@ internal class EngineIoSessionTable(
     for (session in victims) {
       if (session.closed.get()) continue
       val origin = EngineIoPayload.originKey(session.url)
-      pendingByOrigin.remove(origin, session)
-      session.sid?.let { byOriginAndSid.remove(sidKey(origin, it), session) }
+      pendingByOrigin.removeIfMapped(origin, session)
+      session.sid?.let { byOriginAndSid.removeIfMapped(sidKey(origin, it), session) }
       dropped.add(session)
     }
     return dropped
@@ -104,8 +105,8 @@ internal class EngineIoSessionTable(
   fun close(session: Session): Boolean {
     if (!session.closed.compareAndSet(false, true)) return false
     val origin = EngineIoPayload.originKey(session.url)
-    pendingByOrigin.remove(origin, session)
-    session.sid?.let { byOriginAndSid.remove(sidKey(origin, it), session) }
+    pendingByOrigin.removeIfMapped(origin, session)
+    session.sid?.let { byOriginAndSid.removeIfMapped(sidKey(origin, it), session) }
     return true
   }
 
@@ -120,5 +121,10 @@ internal class EngineIoSessionTable(
   private companion object {
     const val TTL_MS = 90_000L
     const val MAX_SESSIONS = 64
+  }
+
+  /** Map.remove(key, value) without the API 24 default method; callers hold the lock. */
+  private fun <K, V> MutableMap<K, V>.removeIfMapped(key: K, value: V) {
+    if (this[key] === value) remove(key)
   }
 }

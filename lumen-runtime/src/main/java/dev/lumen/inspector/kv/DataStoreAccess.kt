@@ -7,6 +7,7 @@ import java.lang.ref.WeakReference
 import java.lang.reflect.Field
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Modifier
+import java.util.Collections
 import java.util.Enumeration
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -30,7 +31,7 @@ internal object DataStoreAccess {
   private val known = ConcurrentHashMap<String, WeakReference<Any>>()
   private val delegates = ArrayList<WeakReference<Any>>()
   private val delegatesLock = Any()
-  private val inFlight = ConcurrentHashMap.newKeySet<String>()
+  private val inFlight: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
   private val scanned = AtomicBoolean(false)
   private val scanStarted = AtomicBoolean(false)
   private val scanDone = CountDownLatch(1)

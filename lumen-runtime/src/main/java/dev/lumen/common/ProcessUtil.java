@@ -7,6 +7,7 @@
 
 package dev.lumen.common;
 
+import android.os.Build;
 import android.os.Process;
 import android.os.UserManager;
 
@@ -72,6 +73,8 @@ public class ProcessUtil {
     // On multi-user devices, user id is calculated from process uid.
     // On single-user devices, user id is always 0.
     // https://cs.android.com/android/platform/superproject/+/master:frameworks/base/core/java/android/os/UserHandle.java;l=282;drc=5a5038ddb87b9c4ac576935b77cab4688169ee48
-    return UserManager.supportsMultipleUsers() ? Process.myUid() / 100000 : 0;
+    boolean multiUser =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && UserManager.supportsMultipleUsers();
+    return multiUser ? Process.myUid() / 100000 : 0;
   }
 }

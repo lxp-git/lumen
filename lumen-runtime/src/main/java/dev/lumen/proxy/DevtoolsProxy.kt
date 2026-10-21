@@ -60,7 +60,9 @@ object DevtoolsProxy {
     fun serve() {
       while (true) {
         try {
-          LocalServerSocket(chromeName).use { server ->
+          // Not `use {}`: LocalServerSocket is only Closeable from API 28.
+          val server = LocalServerSocket(chromeName)
+          try {
             log("listening @$chromeName")
             while (true) {
               val client = server.accept()
@@ -77,6 +79,8 @@ object DevtoolsProxy {
                 }
               }
             }
+          } finally {
+            server.close()
           }
         } catch (t: Throwable) {
           log("listen ${t.javaClass.simpleName}: ${t.message}")

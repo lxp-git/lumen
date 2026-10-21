@@ -20,7 +20,7 @@ allprojects {
 ext {
     compileSdkVersion = 36
     targetSdkVersion = 36
-    minSdkVersion = 24
+    minSdkVersion = 21
     okhttpVersion = '4.12.0'
     lumenGroup = LUMEN_GROUP
     lumenMavenGroup = LUMEN_MAVEN_GROUP
