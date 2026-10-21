@@ -25,14 +25,14 @@ import json
 import os
 import re
 import shutil
-import signal
 import socket
 import struct
 import subprocess
 import sys
 import time
 
-SOCKET_RE = re.compile(r"@(lumen_(.+?)(?:_(\d+))?_devtools_remote)$")
+# @lumen_<process>_devtools_remote, or @lumen_<process>_<user>_devtools_remote for user != 0.
+SOCKET_RE = re.compile(r"@(lumen_(.+)_devtools_remote)$")
 CDP_PATH = "/devtools/page/1"
 LOCAL_STORAGE = {"storageKey": "lumen-default", "isLocalStorage": True}
 
@@ -97,6 +97,13 @@ class Adb:
             pass
 
 
+def process_matches(process, package):
+    """`process` is the socket's middle part: a process name, maybe with a `_<user>` suffix."""
+    m = re.fullmatch(r"(.+?)(:[^_]*)?(?:_(\d+))?", process)
+    candidates = {process, m.group(1), (m.group(1) + (m.group(2) or ""))} if m else {process}
+    return package in candidates or any(c.startswith(package + ":") for c in candidates)
+
+
 def resolve_target(serial, package):
     """Pick the device and Lumen socket, explaining what to do when there is no match."""
     probe = Adb(serial)
@@ -107,7 +114,7 @@ def resolve_target(serial, package):
     for s in serials:
         adb = Adb(s)
         for sock, process in adb.lumen_sockets():
-            if package and process != package and not process.startswith(package + ":"):
+            if package and not process_matches(process, package):
                 continue
             candidates.append((adb, sock, process))
     if not candidates:
@@ -141,18 +148,10 @@ class WebSocket:
                 raise LumenError("CDP endpoint closed during the WebSocket handshake")
             head += chunk
         head, self.buffer = head.split(b"\r\n\r\n", 1)
+        self.fragments = b""
         status = head.split(b"\r\n", 1)[0]
         if b" 101 " not in status + b" ":
             raise LumenError("WebSocket upgrade refused: %s" % status.decode(errors="replace"))
-
-    def _read(self, n):
-        while len(self.buffer) < n:
-            chunk = self.sock.recv(max(65536, n - len(self.buffer)))
-            if not chunk:
-                raise LumenError("CDP connection closed by the app")
-            self.buffer += chunk
-        data, self.buffer = self.buffer[:n], self.buffer[n:]
-        return data
 
     def _send_frame(self, opcode, payload):
         header = bytes([0x80 | opcode])
@@ -170,29 +169,55 @@ class WebSocket:
     def send(self, text):
         self._send_frame(0x1, text.encode("utf-8"))
 
+    def _next_frame(self):
+        """(opcode, fin, payload) once a whole frame is buffered, else None. Consumes nothing
+        until then, so a timeout between reads leaves the stream intact."""
+        buf = self.buffer
+        if len(buf) < 2:
+            return None
+        n, off = buf[1] & 0x7F, 2
+        if n == 126:
+            if len(buf) < 4:
+                return None
+            n, off = struct.unpack(">H", buf[2:4])[0], 4
+        elif n == 127:
+            if len(buf) < 10:
+                return None
+            n, off = struct.unpack(">Q", buf[2:10])[0], 10
+        mask = None
+        if buf[1] & 0x80:
+            if len(buf) < off + 4:
+                return None
+            mask, off = buf[off:off + 4], off + 4
+        if len(buf) < off + n:
+            return None
+        payload = buf[off:off + n]
+        if mask:
+            payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        self.buffer = buf[off + n:]
+        return buf[0] & 0x0F, bool(buf[0] & 0x80), payload
+
     def recv(self):
-        """Next complete text message; answers pings, raises on close."""
-        message = b""
+        """Next complete text message; answers pings, raises on close. Socket timeouts
+        propagate with buffered bytes and partial fragments kept for the next call."""
         while True:
-            b0, b1 = self._read(2)
-            opcode, fin = b0 & 0x0F, b0 & 0x80
-            n = b1 & 0x7F
-            if n == 126:
-                n = struct.unpack(">H", self._read(2))[0]
-            elif n == 127:
-                n = struct.unpack(">Q", self._read(8))[0]
-            mask = self._read(4) if b1 & 0x80 else None
-            payload = self._read(n)
-            if mask:
-                payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+            frame = self._next_frame()
+            if frame is None:
+                chunk = self.sock.recv(65536)
+                if not chunk:
+                    raise LumenError("CDP connection closed by the app")
+                self.buffer += chunk
+                continue
+            opcode, fin, payload = frame
             if opcode == 0x8:
                 raise LumenError("CDP connection closed by the app")
             if opcode == 0x9:
                 self._send_frame(0xA, payload)
                 continue
             if opcode in (0x0, 0x1, 0x2):
-                message += payload
+                self.fragments += payload
                 if fin:
+                    message, self.fragments = self.fragments, b""
                     return message.decode("utf-8", errors="replace")
 
     def close(self):
@@ -208,12 +233,11 @@ class Cdp:
 
     def __init__(self, serial=None, package=None, timeout=15.0):
         self.adb, self.socket_name, self.process = resolve_target(serial, package)
-        self.package = self.process.split(":")[0]
         self.timeout = timeout
         self.port = self.adb.forward(self.socket_name)
         try:
             self.ws = WebSocket("127.0.0.1", self.port, CDP_PATH, timeout)
-        except Exception:
+        except BaseException:
             self.adb.remove_forward(self.port)
             raise
         self.next_id = 0
@@ -411,9 +435,20 @@ def cmd_logs(cdp, args):
                 print("%s %s %s" % (fmt_time(e["timestamp"]), e["level"][0].upper(), line))
             sys.stdout.flush()
 
+        newest = cdp.call("Lumen.getLogs", {"limit": 1})["logs"]
+        high_water = newest[-1]["time"] if newest else 0
+
+        def live_only(msg):
+            # Log.enable replays a page of history, possibly after its reply; skip it.
+            if msg["method"] == "Log.entryAdded" and msg["params"]["entry"]["timestamp"] <= high_water:
+                return
+            on_event(msg)
+
         cdp.call("Log.enable")
-        cdp.events.clear()  # the enable call replays a page of history; skip it
-        cdp.wait_events(args.seconds, on_event)
+        for msg in cdp.events:
+            live_only(msg)
+        cdp.events.clear()
+        cdp.wait_events(args.seconds, live_only)
         cdp.call("Log.disable")
         return
     params = {"limit": args.limit}
@@ -572,8 +607,11 @@ def cmd_har(cdp, args):
     path = cdp.call("Lumen.exportHar", {"includeBodies": not args.no_bodies}).get("value")
     if not path or not path.startswith("/"):
         raise LumenError("exportHar failed: %s" % path)
-    data = cdp.adb.run("exec-out", "run-as", cdp.package, "cat", path, binary=True)
-    out = args.output or "lumen-%s-%s.har" % (cdp.package, time.strftime("%Y%m%d-%H%M%S"))
+    package = cdp.call("Target.getTargetInfo")["targetInfo"]["title"].split(":")[0]
+    data = cdp.adb.run("exec-out", "run-as", package, "cat", path, binary=True)
+    if not data.lstrip().startswith(b"{"):
+        raise LumenError("could not read %s: %s" % (path, data[:200].decode(errors="replace").strip()))
+    out = args.output or "lumen-%s-%s.har" % (package, time.strftime("%Y%m%d-%H%M%S"))
     with open(out, "wb") as f:
         f.write(data)
     print("wrote %s (%d bytes)" % (out, len(data)))
@@ -693,8 +731,6 @@ COMMANDS = {
 
 
 def main(argv=None):
-    if hasattr(signal, "SIGPIPE"):
-        signal.signal(signal.SIGPIPE, signal.SIG_DFL)  # `lumen.py logs | head` exits quietly
     args = build_parser().parse_args(argv)
     try:
         if args.cmd == "targets":
@@ -709,8 +745,15 @@ def main(argv=None):
     except LumenError as e:
         print("lumen: %s" % e, file=sys.stderr)
         return 1
-    except (BrokenPipeError, KeyboardInterrupt):
+    except BrokenPipeError:
+        # `lumen.py logs | head`: the reader left. The forward is already removed (finally).
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 0
+    except KeyboardInterrupt:
         return 130
+    except (OSError, ValueError) as e:  # timeouts, resets, bad --since / JSON params
+        print("lumen: %s: %s" % (type(e).__name__, e), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

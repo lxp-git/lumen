@@ -61,7 +61,10 @@ class FakeCdpServer(threading.Thread):
             msg = json.loads(payload)
             self.received.append(msg)
             for out in self.handler(msg):
-                conn.sendall(out)
+                if isinstance(out, tuple):  # ("sleep", seconds)
+                    time.sleep(out[1])
+                else:
+                    conn.sendall(out)
         conn.close()
 
     @staticmethod
@@ -155,6 +158,20 @@ class CdpClientTest(unittest.TestCase):
         self.assertEqual({"len": 70_000}, client.call("Echo.len", {"q": "y" * 70_000}))
         client.ws.close()
 
+    def test_timeout_mid_frame_keeps_the_stream_usable(self):
+        def handler(msg):
+            whole = reply(msg, {"after": "pause"})
+            return [whole[:5], ("sleep", 0.5), whole[5:]]
+
+        server, client = self.connect(handler)
+        client.ws.send(json.dumps({"id": 1, "method": "Slow.get", "params": {}}))
+        client.ws.sock.settimeout(0.2)
+        with self.assertRaises(socket.timeout):
+            client.ws.recv()  # only a partial frame so far
+        client.ws.sock.settimeout(5)
+        self.assertEqual({"after": "pause"}, json.loads(client.ws.recv())["result"])
+        client.ws.close()
+
     def test_error_reply_raises(self):
         def handler(msg):
             return [server_frame(0x1, json.dumps(
@@ -171,8 +188,18 @@ class HelpersTest(unittest.TestCase):
         m = lumen.SOCKET_RE.search("0000: 00000002 ... @lumen_com.example.app_devtools_remote")
         self.assertEqual("com.example.app", m.group(2))
         m = lumen.SOCKET_RE.search("@lumen_com.example.app:remote_10_devtools_remote")
-        self.assertEqual(("com.example.app:remote", "10"), (m.group(2), m.group(3)))
+        self.assertEqual("com.example.app:remote_10", m.group(2))
         self.assertIsNone(lumen.SOCKET_RE.search("@chrome_devtools_remote"))
+
+    def test_process_matching(self):
+        match = lumen.process_matches
+        self.assertTrue(match("com.example.app", "com.example.app"))
+        self.assertTrue(match("com.example.app:remote", "com.example.app"))
+        self.assertTrue(match("com.example.app_10", "com.example.app"))      # user 10
+        self.assertTrue(match("com.example.app:sync_10", "com.example.app"))
+        self.assertTrue(match("com.foo.bar_2", "com.foo.bar_2"))             # package ends in _2
+        self.assertFalse(match("com.example.application", "com.example.app"))
+        self.assertFalse(match("com.other", "com.example.app"))
 
     def test_parse_since(self):
         now = time.time() * 1000
