@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Lumen Sample</string>
+    <string name="inspect_hint">chrome://inspect → lumen://%1$s</string>
+    <string name="run">Run</string>
+    <string name="console">Console</string>
+    <string name="console_empty">Tap Run, or: adb shell am start -n dev.lumen.sample/.MainActivity --es scenario all</string>
+    <string name="unknown_scenario">Unknown scenario \"%1$s\". Try: http, mock, websocket, socket_io, logcat, storage, database, all</string>
 </resources>

@@ -1,0 +1,11 @@
+{
+  "urlGlob": "https://api.lumen.invalid/v1/checkout*",
+  "method": "POST",
+  "status": 503,
+  "delayMs": 800,
+  "headers": {
+    "Content-Type": "application/json",
+    "Retry-After": "30"
+  },
+  "body": "{\"error\":\"service_unavailable\",\"message\":\"Simulated by Lumen: try again later\"}"
+}

@@ -1,6 +1,9 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'com.google.devtools.ksp' version '2.1.20-2.0.1'
+    // The only line an app needs. Debuggable variants get the agent, the OkHttp weave and
+    // the config below; release variants are left untouched.
     id 'io.github.lxp-git.lumen'
 }
 
@@ -13,7 +16,11 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "0.3.0"
+        versionName rootProject.ext.lumenVersion
+    }
+
+    buildFeatures {
+        viewBinding true
     }
 
     compileOptions {
@@ -27,7 +34,9 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Signed with the debug key only so CI can build it; proves release ships no Lumen.
             signingConfig signingConfigs.debug
         }
     }
@@ -37,17 +46,36 @@ android {
     }
 }
 
+// Optional. Every knob has a sensible default; these show the DSL.
 lumen {
-    enabled = true
-    injectOkHttp = true
-    // Non-default so Lumen.getStatus can prove the DSL reached the process.
-    retentionDays = 2
+    retentionDays = 3
+    // DevTools "Override content" edits become rules under filesDir/lumen/mocks that keep
+    // answering after Chrome disconnects and across restarts.
+    mockRecordOverrides = true
 }
 
 dependencies {
-    // OkHttp is the app's HTTP stack. lumen-okhttp is added by the plugin on debug.
-    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.activity:activity-ktx:1.9.3'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+
+    // Network: plain OkHttp, Retrofit on top of it, and Socket.IO (which also rides OkHttp).
     implementation "com.squareup.okhttp3:okhttp:${rootProject.ext.okhttpVersion}"
+    implementation 'com.squareup.retrofit2:retrofit:2.11.0'
+    implementation 'com.squareup.retrofit2:converter-gson:2.11.0'
+    implementation('io.socket:socket.io-client:2.1.1') {
+        exclude group: 'org.json', module: 'json'
+    }
+
+    // Storage engines Lumen shows under Application → IndexedDB / Local Storage.
     implementation 'androidx.datastore:datastore-preferences:1.1.1'
     implementation 'com.tencent:mmkv:1.3.14'
+
+    // SQLite through Room; reachable with `lumen.py db`.
+    implementation 'androidx.room:room-runtime:2.7.2'
+    implementation 'androidx.room:room-ktx:2.7.2'
+    ksp 'androidx.room:room-compiler:2.7.2'
 }

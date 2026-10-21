@@ -1,58 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:fitsSystemWindows="true"
+    android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/status"
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Lumen sample — zero Application glue. Agent starts via ContentProvider."
-        android:textSize="14sp" />
+        app:title="@string/app_name" />
 
-    <Button
-        android:id="@+id/btn_request"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="Fire 5 HTTP requests" />
-
-    <Button
-        android:id="@+id/btn_log"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Spam logcat" />
-
-    <Button
-        android:id="@+id/btn_mock_target"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Request mock target URL" />
-
-    <Button
-        android:id="@+id/btn_websocket"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Open echo WebSocket" />
-
-    <Button
-        android:id="@+id/btn_kv"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Seed SharedPreferences / DataStore / MMKV" />
-
-    <TextView
-        android:id="@+id/output"
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="12dp"
-        android:layout_weight="1"
-        android:background="#11000000"
-        android:fontFamily="monospace"
-        android:padding="8dp"
-        android:textIsSelectable="true"
-        android:textSize="12sp" />
+        android:layout_weight="1">
 
+        <LinearLayout
+            android:id="@+id/scenarios"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp" />
+    </androidx.core.widget.NestedScrollView>
+
+    <com.google.android.material.card.MaterialCardView
+        style="@style/Widget.Material3.CardView.Filled"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:layout_margin="12dp">
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <TextView
+                android:id="@+id/console"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/console"
+                android:fontFamily="monospace"
+                android:hint="@string/console_empty"
+                android:padding="12dp"
+                android:textIsSelectable="true"
+                android:textSize="11sp" />
+        </ScrollView>
+    </com.google.android.material.card.MaterialCardView>
 </LinearLayout>

@@ -1,0 +1,10 @@
+{
+  "urlContains": "pokeapi.co/api/v2/pokemon/missingno",
+  "method": "GET",
+  "status": 200,
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Lumen-Mock": "assets/lumen-mocks/pokemon-missingno.json"
+  },
+  "body": "{\"id\":0,\"name\":\"missingno\",\"height\":10,\"weight\":15900,\"types\":[{\"slot\":1,\"type\":{\"name\":\"bird\",\"url\":\"\"}},{\"slot\":2,\"type\":{\"name\":\"normal\",\"url\":\"\"}}]}"
+}

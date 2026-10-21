@@ -1,0 +1,8 @@
+{
+  "urlEquals": "https://api.lumen.invalid/v1/flags",
+  "status": 200,
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"newCheckout\":true,\"darkLaunch\":[\"socket-chat\"]}"
+}
