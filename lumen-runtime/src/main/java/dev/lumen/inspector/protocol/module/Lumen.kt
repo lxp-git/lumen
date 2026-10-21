@@ -2,11 +2,14 @@ package dev.lumen.inspector.protocol.module
 
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer
 import dev.lumen.inspector.jsonrpc.JsonRpcResult
+import dev.lumen.inspector.jsonrpc.RawJsonResult
 import dev.lumen.inspector.protocol.ChromeDevtoolsDomain
 import dev.lumen.inspector.protocol.ChromeDevtoolsMethod
 import dev.lumen.json.annotation.JsonProperty
 import dev.lumen.mock.MockEngine
 import dev.lumen.store.EventStore
+import dev.lumen.store.NetworkRecord
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -147,6 +150,101 @@ class Lumen(
     val source = params?.optString("source")?.takeIf { it.isNotEmpty() }
     return ValueResult("removed ${mockEngine.clearRules(source)}")
   }
+
+  // ── Agent queries ─────────────────────────────────────────────────────────
+  // Compact reads over the EventStore for scripts (the Lumen skill's CLI). Chrome's
+  // panels never call these; they replay events instead.
+
+  /** Newest-last request summaries. Filters: `urlContains`, `method`, `status`, `failed`. */
+  @ChromeDevtoolsMethod
+  fun listRequests(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
+    val urlContains = params?.optString("urlContains").orEmpty()
+    val method = params?.optString("method").orEmpty()
+    val status = params?.optInt("status", 0) ?: 0
+    val failedOnly = params?.optBoolean("failed", false) ?: false
+    val limit = (params?.optInt("limit", 50) ?: 50).coerceIn(1, 1_000)
+    val matches = store.network.allRecords().filter { r ->
+      (urlContains.isEmpty() || r.url.contains(urlContains, ignoreCase = true)) &&
+        (method.isEmpty() || r.method.equals(method, ignoreCase = true)) &&
+        (status == 0 || r.statusCode == status) &&
+        (!failedOnly || r.failedReason != null || (r.statusCode ?: 0) >= 400)
+    }
+    val requests = JSONArray()
+    for (r in matches.takeLast(limit)) requests.put(summary(r))
+    return RawJsonResult(JSONObject().put("total", matches.size).put("requests", requests))
+  }
+
+  /**
+   * One exchange in full: headers, request body, response body (decoded; base64 when
+   * binary), and the newest WebSocket frames. `maxBodyChars` caps the response body.
+   */
+  @ChromeDevtoolsMethod
+  fun getRequest(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
+    val id = params?.optString("requestId").orEmpty()
+    val record = store.network.get(id) ?: return RawJsonResult(JSONObject().put("error", "not-found"))
+    val maxBodyChars = (params?.optInt("maxBodyChars", 200_000) ?: 200_000).coerceAtLeast(0)
+    val maxFrames = (params?.optInt("maxFrames", 200) ?: 200).coerceAtLeast(0)
+    val out = summary(record)
+      .put("requestHeaders", JSONObject(record.requestHeaders as Map<*, *>))
+      .put("responseHeaders", JSONObject(record.responseHeaders as Map<*, *>))
+      .put("requestBody", record.requestBody ?: JSONObject.NULL)
+      .put("statusText", record.statusText ?: JSONObject.NULL)
+      .put("note", record.note ?: JSONObject.NULL)
+    store.network.readBody(id)?.let { (body, base64) ->
+      out.put("responseBody", body.take(maxBodyChars))
+        .put("responseBodyBase64", base64)
+        .put("responseBodyTruncated", body.length > maxBodyChars)
+    }
+    if (record.isWebSocket) {
+      val frames = JSONArray()
+      for (f in record.wsFrames.snapshot().takeLast(maxFrames)) {
+        frames.put(
+          JSONObject()
+            .put("time", f.timestampMs)
+            .put("dir", if (f.outgoing) "send" else "recv")
+            .put("opcode", f.opcode)
+            .put("payload", f.payload)
+            .put("truncated", f.truncated),
+        )
+      }
+      out.put("frames", frames)
+    }
+    return RawJsonResult(out)
+  }
+
+  /**
+   * Logcat search over the live tail and archived segments (newest `limit` matches, oldest
+   * first). Filters: `contains` (case-insensitive), `level` (minimum: verbose, info,
+   * warning, error), `sinceMs` (epoch millis).
+   */
+  @ChromeDevtoolsMethod
+  fun getLogs(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
+    val entries = store.logs.query(
+      limit = (params?.optInt("limit", 200) ?: 200).coerceIn(1, 10_000),
+      contains = params?.optString("contains")?.takeIf { it.isNotEmpty() },
+      minLevel = params?.optString("level")?.takeIf { it.isNotEmpty() },
+      sinceMs = params?.optDouble("sinceMs")?.takeUnless { it.isNaN() },
+    )
+    val logs = JSONArray()
+    for (e in entries) {
+      logs.put(JSONObject().put("time", e.timestampMs.toLong()).put("level", e.level).put("text", e.text))
+    }
+    return RawJsonResult(JSONObject().put("logs", logs))
+  }
+
+  private fun summary(r: NetworkRecord): JSONObject = JSONObject()
+    .put("id", r.requestId)
+    .put("method", r.method)
+    .put("url", r.url)
+    .put("status", r.statusCode ?: JSONObject.NULL)
+    .put("mimeType", r.mimeType ?: JSONObject.NULL)
+    .put("startedAt", r.startedAtMs)
+    .put("durationMs", r.finishedAtMs?.let { it - r.startedAtMs } ?: JSONObject.NULL)
+    .put("size", r.encodedDataLength)
+    .put("mocked", r.mocked)
+    .put("failed", r.failedReason ?: JSONObject.NULL)
+    .put("webSocket", r.isWebSocket)
+    .put("frameCount", r.wsFrameCount)
 
   class StatusResult(
     @JvmField @JsonProperty val retentionDays: Int,

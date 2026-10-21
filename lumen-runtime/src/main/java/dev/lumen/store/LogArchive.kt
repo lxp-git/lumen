@@ -126,6 +126,45 @@ class LogArchive(
     }
   }
 
+  /**
+   * Newest [limit] entries matching the filters, oldest first, searched backwards from the
+   * live tail across segments (ignores [activeSegmentId]). Stops after [maxScan] lines so a
+   * week of logs is never read in one call. Files are read outside the lock; a line torn by a
+   * concurrent flush is skipped.
+   */
+  fun query(
+    limit: Int,
+    contains: String? = null,
+    minLevel: String? = null,
+    sinceMs: Double? = null,
+    maxScan: Int = DEFAULT_MAX_SCAN,
+  ): List<LogEntry> {
+    val minRank = minLevel?.let(::levelRank) ?: 0
+    fun matches(entry: LogEntry): Boolean =
+      levelRank(entry.level) >= minRank &&
+        (sinceMs == null || entry.timestampMs >= sinceMs) &&
+        (contains.isNullOrEmpty() || entry.text.contains(contains, ignoreCase = true))
+
+    val (tail, segments) = synchronized(lock) { ArrayList(pending) to listSegmentFilesLocked() }
+    val newestFirst = ArrayList<LogEntry>()
+    var scanned = 0
+    fun scan(entries: List<LogEntry>): Boolean {
+      for (i in entries.indices.reversed()) {
+        val entry = entries[i]
+        if (sinceMs != null && entry.timestampMs < sinceMs) return false
+        if (matches(entry)) newestFirst.add(entry)
+        if (newestFirst.size >= limit || ++scanned >= maxScan) return false
+      }
+      return true
+    }
+    if (scan(tail)) {
+      for (segment in segments.asReversed()) {
+        if (!scan(readSegment(segment))) break
+      }
+    }
+    return newestFirst.asReversed()
+  }
+
   fun clearAll() {
     synchronized(lock) {
       pending.clear()
@@ -303,6 +342,16 @@ class LogArchive(
     SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
 
   companion object {
+    private const val DEFAULT_MAX_SCAN = 200_000
+
+    /** CDP Log levels in increasing severity; unknown levels rank as verbose. */
+    fun levelRank(level: String): Int = when (level.lowercase()) {
+      "info" -> 1
+      "warn", "warning" -> 2
+      "error" -> 3
+      else -> 0
+    }
+
     /** Spill promptly so short debug sessions still leave files on disk. */
     private const val FLUSH_EVERY = 50
     private const val SEGMENT_MAX_LINES = 25_000
