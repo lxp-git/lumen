@@ -10,5 +10,3 @@ pluginManagement {
 include ':lumen-runtime'
 include ':lumen-okhttp'
 include ':lumen-sample'
-include ':stetho'
-include ':stetho-okhttp3'
