@@ -186,6 +186,9 @@ internal object DataStoreAccess {
       {
         try {
           scanStatics(app)
+        } catch (t: Throwable) {
+          // Inspector-only work: anything escaping this thread would kill the host app.
+          LogUtil.w(t, "DataStore static scan aborted")
         } finally {
           scanned.set(true)
           scanDone.countDown()
@@ -206,7 +209,8 @@ internal object DataStoreAccess {
       } catch (_: Throwable) {
         continue
       }
-      for (field in clazz.declaredFields) {
+      val fields = declaredFieldsOrNull(clazz) ?: continue
+      for (field in fields) {
         if (!Modifier.isStatic(field.modifiers)) continue
         if (!looksLikeDataStore(field.type)) continue
         val raw = try {
@@ -232,7 +236,7 @@ internal object DataStoreAccess {
   private fun matchIn(target: Any, path: String): Any? {
     var c: Class<*>? = target.javaClass
     while (c != null && c != Any::class.java) {
-      for (field in c.declaredFields) {
+      for (field in declaredFieldsOrNull(c).orEmpty()) {
         if (!looksLikeDataStore(field.type)) continue
         val raw = try {
           field.isAccessible = true
@@ -256,6 +260,17 @@ internal object DataStoreAccess {
     }
     return null
   }
+
+  /**
+   * A class can load while one of its field types is missing (an optional dependency the
+   * host did not ship); the type only resolves here, as a [LinkageError].
+   */
+  internal fun declaredFieldsOrNull(clazz: Class<*>): Array<Field>? =
+    try {
+      clazz.declaredFields
+    } catch (_: LinkageError) {
+      null
+    }
 
   private fun looksLikeDataStore(type: Class<*>): Boolean {
     var c: Class<*>? = type
