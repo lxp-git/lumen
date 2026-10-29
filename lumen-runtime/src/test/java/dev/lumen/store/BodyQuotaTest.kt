@@ -59,6 +59,30 @@ class BodyQuotaTest {
   }
 
   @Test
+  fun aFileListSpanningDirectoriesIsPrunedTogether() {
+    val bodies = temp.newFolder("bodies")
+    val oldSession = body(temp.root, "session-1-1.jsonl", 60, 1_000_000L)
+    val newBody = body(bodies, "body-2-2-2.1", 60, 2_000_000L)
+
+    BodyQuota.prune(listOf(newBody, oldSession), quotaBytes = 100)
+
+    assertFalse(oldSession.exists())
+    assertTrue(newBody.exists())
+  }
+
+  @Test
+  fun aHugeLiveFileCountsForAtMostHalfTheQuota() {
+    val dir = temp.newFolder("bodies")
+    val older = body(dir, "older", 40, 1_000_000L)
+    val newest = body(dir, "newest", 40, 2_000_000L)
+
+    BodyQuota.prune(listOf(older, newest), quotaBytes = 100, pinnedBytes = 10_000)
+
+    assertFalse(older.exists())
+    assertTrue(newest.exists())
+  }
+
+  @Test
   fun missingDirectoryIsANoOp() {
     BodyQuota.prune(File(temp.root, "absent"), quotaBytes = 0)
   }

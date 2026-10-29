@@ -48,7 +48,7 @@ from before Chrome attached are visible.
 OkHttp call ──▶ LumenInterceptor (application interceptor)
                  ├─ MockEngine: asset / runtime / recorded rule? ──▶ synthetic response
                  ├─ Fetch.enable active? pause until Chrome fulfils / continues / fails
-                 ├─ NetworkArchive.put / update        (metadata, in memory + session jsonl)
+                 ├─ NetworkArchive.put / update        (in memory + session jsonl; request body file)
                  ├─ CaptureInputStream ─▶ body file    (raw bytes, capped per body + quota)
                  └─ NetworkEventReporter ─▶ live CDP Network.* events, if a peer listens
 
@@ -60,7 +60,15 @@ logcat -v threadtime ──▶ LogArchive (pending batch ─▶ spill-NNNNNN.jso
   app-negotiated gzip / deflate and picks text vs base64 when a body is *read*
   (`Network.getResponseBody`, HAR export, `Lumen.getRequest`), never on the HTTP thread.
 - **Metadata** lines for the session file are built under the archive lock and written by
-  `JsonlAppender`'s thread in batches.
+  `JsonlAppender`'s thread in batches. A record writes one line per lifecycle update; header
+  maps go in only when they change, and readers merge a record's lines (`NetworkRecordJson`).
+- **History**: memory keeps the newest 1000 records of the launch, plus unfinished ones such
+  as open WebSockets. For the rest, `NetworkSessionIndex` records where each record's lines
+  start in a session file, so `NetworkArchive.replay`, `forEachInSession` and `locate` read
+  records back one at a time instead of loading the file. That lets `Network.enable` replay the
+  whole launch (`networkReplayLimit` caps it), and lets `Network.getResponseBody` and
+  `lumen.py req` reach earlier launches. Files are keyed by launch (`<pid>-<startMs>`), not
+  pid, because Android reuses pids. WebSocket frames stay in memory only.
 - **WebSockets**: `LumenWebSocketListener` / `LumenWebSocket` report frames;
   `WsFrameLog` keeps the newest frames per socket (Engine.IO ping/pong evicted first) for late
   attach. `WsFrameNetworkRows` adds one searchable XHR row per socket, because Chrome's
@@ -93,9 +101,10 @@ Chrome window survives app restarts.
 ## Where things live on the device
 
 `files/lumen/` inside the app's private storage: `logs/spill-*.jsonl`,
-`network/session-<pid>.jsonl`, `network/bodies/body-<requestId>`, `mocks/` (recorded
-overrides), and `export-*` files from HAR / log export. Retention and the body quota are
-enforced at startup and as bodies close.
+`network/session-<pid>-<startMs>.jsonl`, `network/bodies/body-<launch>-<requestId>` and
+`req-<launch>-<requestId>`, `mocks/` (recorded overrides), and `export-*` files from HAR / log
+export. Retention is enforced at startup. The body quota, which also covers earlier launches'
+session files, is enforced as bodies close.
 
 ## Code layout
 

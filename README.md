@@ -41,7 +41,7 @@ in and weaves OkHttp. Release builds contain no Lumen code.
 
 | Chrome | Android |
 |---|---|
-| Network | OkHttp HTTP (this process, including traffic from before inspect); gzip and binary bodies decoded on view |
+| Network | OkHttp HTTP: the whole launch, including traffic from before inspect; gzip and binary bodies decoded on view. Earlier launches stay on disk (`lumen.py sessions`) |
 | Network → Messages | OkHttp WebSocket; Socket.IO `transport=websocket` and OkHttp `transport=polling` |
 | Console | logcat (`V`–`E`), paged; 7-day archive |
 | Elements | Classic View tree |
@@ -102,6 +102,7 @@ no Chrome needed (Python 3, standard library only):
 L="python3 plugins/lumen/skills/lumen/scripts/lumen.py"
 $L net --failed                          # HTTP >= 400 and transport errors
 $L req 4242.17                           # headers, bodies, WebSocket frames
+$L sessions                              # earlier launches; net/har --session <id>
 $L logs --level warning --since 10m
 $L kv set "SharedPreferences / settings / onboarded" false
 $L db sql app.db "SELECT * FROM users LIMIT 5"

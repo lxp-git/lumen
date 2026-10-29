@@ -43,16 +43,17 @@ Each line is `serial  process  @socket`. If nothing is listed:
 | Goal | Command |
 |---|---|
 | Agent status, version, counters | `status` |
-| Recent HTTP / WS exchanges (newest last) | `net [--url SUBSTR] [--method M] [--status N] [--failed] [--limit N]` |
+| Recent HTTP / WS exchanges (newest last) | `net [--url SUBSTR] [--method M] [--status N] [--failed] [--limit N] [--session ID]` |
 | One exchange: headers, bodies, WS frames | `req <id> [--body-chars N] [--frames N]` |
 | Raw decoded response body | `body <id> [-o file]` |
+| Earlier launches kept on disk | `sessions` |
 | Search logcat (survives restarts, 7 days) | `logs [--grep S] [--exclude S] [--level warning] [--since 10m] [--limit N]` |
 | Stream new log lines | `logs --follow --seconds 30 [--grep S]` |
 | Key-value stores | `kv list [--grep S]`, `kv get KEY`, `kv set KEY VALUE`, `kv rm KEY` |
 | SQLite / Room | `db list`, `db tables DB`, `db sql DB "SELECT …"` |
 | View hierarchy | `ui [--grep S] [--depth N]` |
 | Mock rules | `mock list`, `mock add …`, `mock rm ID`, `mock clear [--source runtime]` |
-| Export traffic | `har [-o file] [--no-bodies]` |
+| Export traffic | `har [-o file] [--no-bodies] [--session ID]` |
 | Anything else in CDP | `cdp Domain.method '{"json":"params"}' [--events SECONDS]` |
 
 `--grep` / `--exclude` are case-insensitive substrings (no regex, no `-i`). Each logcat line is
@@ -79,6 +80,14 @@ lumen.py logs --since 5m --level warning --grep orders
 Check the request headers (auth, content type), the request body, the status and the
 response body before reading app code. `durationMs` and `failed` show timeouts and DNS / TLS
 errors.
+
+**The app restarted (or crashed) since**
+
+```bash
+lumen.py sessions                                  # one row per launch, newest last
+lumen.py net --session session-4242-1792722723387 --failed
+lumen.py req 4242.17                               # any launch; --session if the pid repeats
+```
 
 **Try a server response without changing the server**
 
@@ -120,10 +129,14 @@ Socket.IO sessions, including the polling transport, appear as one WebSocket row
   runtime libraries as plain dependencies; the Gradle plugin handles variants.
 - Mutating commands (`kv set/rm`, `db sql` with writes, `mock add`) change the user's app
   state. Say what you changed, and undo runtime mocks with `mock clear --source runtime`.
-- The network list holds the current process only (a restart clears it; up to 1000
-  exchanges). Logs are archived on disk across restarts.
+- `net` lists what memory holds of the current launch (the newest 1000 exchanges, plus
+  unfinished ones). Everything else stays on disk for `retentionDays` (default 7, 512 MB
+  cap): `net --session` covers a whole launch, and `req <id>` finds any exchange. Across restarts, WebSocket frame
+  payloads are lost. Launches recorded by older Lumen versions keep metadata only. Logs are
+  archived on disk across restarts too.
 - Several apps can embed Lumen at once; pass `-p <applicationId>` rather than guessing.
-- Captured bodies are capped (2 MB per body by default) and may be truncated.
+- Response bodies are capped (2 MB by default) and may be truncated. Request bodies over
+  64 KB, of unknown length, or one-shot / streaming are not captured.
 - Not captured: HttpURLConnection, Cronet, WebView traffic, Socket.IO polling that does not go
   through OkHttp.
 - Humans can see the same data in Chrome: `chrome://inspect/#devices` → `lumen://<process>`.

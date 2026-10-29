@@ -5,8 +5,10 @@ against an in-process fake server.
 """
 
 import base64
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import socket
@@ -172,6 +174,30 @@ class CdpClientTest(unittest.TestCase):
         self.assertEqual({"after": "pause"}, json.loads(client.ws.recv())["result"])
         client.ws.close()
 
+    def test_session_flag_reaches_the_agent(self):
+        sessions = {"session-4242-1792722723387": {"requests": [], "total": 0}}
+
+        def handler(msg):
+            params = msg["params"]
+            if msg["method"] == "Lumen.listRequests":
+                return [reply(msg, sessions.get(params.get("sessionId"), {"error": "unknown-session"}))]
+            return [reply(msg, {"error": "not-found"} if params.get("sessionId") != "session-4242-1"
+                            else {"id": params["requestId"]})]
+
+        server, client = self.connect(handler)
+        parse = lumen.build_parser().parse_args
+        with contextlib.redirect_stdout(io.StringIO()):
+            lumen.cmd_net(client, parse(["--json", "net", "--session", "session-4242-1792722723387"]))
+        with self.assertRaisesRegex(lumen.LumenError, "no session"):
+            lumen.cmd_net(client, parse(["net", "--session", "session-1-1"]))
+        with self.assertRaisesRegex(lumen.LumenError, "no captured request"):
+            lumen.cmd_req(client, parse(["req", "4242.7", "--session", "session-9-9"]))
+        sent = [m["params"] for m in server.received if isinstance(m, dict)]
+        self.assertEqual("session-4242-1792722723387", sent[0]["sessionId"])
+        self.assertEqual({"requestId": "4242.7", "sessionId": "session-9-9", "maxBodyChars": 20000,
+                          "maxFrames": 100}, sent[2])
+        client.ws.close()
+
     def test_error_reply_raises(self):
         def handler(msg):
             return [server_frame(0x1, json.dumps(
@@ -215,7 +241,10 @@ class HelpersTest(unittest.TestCase):
                      ["kv", "set", "SharedPreferences / a / b", "1"],
                      ["db", "sql", "app.db", "SELECT 1"], ["mock", "clear", "--source", "runtime"],
                      ["mock", "add", "--url-glob", "*x*", "--header", "A: b"], ["ui", "--depth", "3"],
-                     ["har", "--no-bodies"], ["cdp", "Page.enable", "{}"]):
+                     ["har", "--no-bodies"], ["cdp", "Page.enable", "{}"], ["sessions"],
+                     ["net", "--session", "session-1-2"], ["req", "1.2", "--session", "1-2"],
+                     ["body", "1.2", "--session", "1-2", "-o", "x"],
+                     ["har", "--session", "session-1-2"]):
             parser.parse_args(argv)
 
 

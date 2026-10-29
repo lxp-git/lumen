@@ -16,6 +16,8 @@ open class LumenExtension(project: Project) {
   val enabled = project.objects.property(Boolean::class.java).convention(true)
   val retentionDays = project.objects.property(Int::class.java).convention(7)
   val networkBodyQuotaMb = project.objects.property(Int::class.java).convention(512)
+  /** Exchanges replayed when DevTools attaches, newest kept; 0 = the whole launch. */
+  val networkReplayLimit = project.objects.property(Int::class.java).convention(0)
   val logPageSize = project.objects.property(Int::class.java).convention(1_000)
   val wsMaxFrames = project.objects.property(Int::class.java).convention(2_500)
   val wsMaxFrameChars = project.objects.property(Int::class.java).convention(16_384)

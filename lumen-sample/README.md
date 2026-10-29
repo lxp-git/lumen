@@ -24,7 +24,8 @@ adb shell am start -n dev.lumen.sample/.MainActivity --es fetch https://pokeapi.
 ```
 
 `fetch` sends one GET through the app's client, handy for trying a rule added with
-`lumen.py mock add`. The public echo server used for Socket.IO is load balanced without
+`lumen.py mock add`; add `--ei count 1500` to send that many, e.g. to fill the network history
+past what Lumen keeps in memory. The public echo server used for Socket.IO is load balanced without
 sticky sessions, so the polling session can be refused after its handshake; the websocket
 session is the reliable one.
 

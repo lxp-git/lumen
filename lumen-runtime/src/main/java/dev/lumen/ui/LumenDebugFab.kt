@@ -173,7 +173,7 @@ object LumenDebugFab {
         }
       }
       ACTION_EXPORT_HAR -> {
-        val file = s.network.exportHarToFile(true)
+        val file = s.network.exportHarToFile(true) ?: return // never null for this launch
         toast(context, "HAR: ${file.absolutePath}")
         LogUtil.i("Exported HAR to %s", file.absolutePath)
       }

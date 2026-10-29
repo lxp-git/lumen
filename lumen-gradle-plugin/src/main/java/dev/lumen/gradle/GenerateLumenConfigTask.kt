@@ -23,6 +23,9 @@ abstract class GenerateLumenConfigTask : DefaultTask() {
   abstract val networkBodyQuotaMb: Property<Int>
 
   @get:Input
+  abstract val networkReplayLimit: Property<Int>
+
+  @get:Input
   abstract val wsMaxFrames: Property<Int>
 
   @get:Input
@@ -54,6 +57,7 @@ abstract class GenerateLumenConfigTask : DefaultTask() {
           <integer name="lumen_retention_days">${retentionDays.get()}</integer>
           <integer name="lumen_log_page_size">${logPageSize.get()}</integer>
           <integer name="lumen_network_body_quota_mb">${networkBodyQuotaMb.get()}</integer>
+          <integer name="lumen_network_replay_limit">${networkReplayLimit.get()}</integer>
           <integer name="lumen_ws_max_frames">${wsMaxFrames.get()}</integer>
           <integer name="lumen_ws_max_frame_chars">${wsMaxFrameChars.get()}</integer>
           <bool name="lumen_mock_enabled">${mockEnabled.get()}</bool>

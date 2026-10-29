@@ -34,9 +34,18 @@ data class NetworkRecord(
   var wsFrameCount: Int = 0,
   /** Non-fatal note (e.g. Fetch pause timed out and the call continued). */
   var note: String? = null,
+  /**
+   * Spilled request body. Set on records read back from disk; a live record keeps
+   * [requestBody] in memory (see [NetworkArchive.requestBody]).
+   */
+  var requestBodyPath: String? = null,
 ) {
   /** Archived frames for late-connect replay; capped by [NetworkArchive.archiveWsFrame]. */
   val wsFrames: WsFrameLog = WsFrameLog()
+
+  /** Header maps the session jsonl already holds; see [NetworkRecordJson.line]. */
+  internal var persistedRequestHeaders: Map<String, String>? = null
+  internal var persistedResponseHeaders: Map<String, String>? = null
 }
 
 /** One archived WebSocket frame for late-connect CDP replay. */
@@ -54,9 +63,12 @@ data class WsFrame(
 data class NetworkSessionInfo(
   val id: String,
   val pid: Int?,
+  /** Launch time; null for sessions written before launch keys existed. */
+  val startedAtMs: Long?,
   val path: String,
   val sizeBytes: Long,
   val modifiedAtMs: Long,
-  val entryCount: Int,
+  /** Distinct requests, counted only when asked for (it reads the whole file). */
+  val requestCount: Int?,
   val current: Boolean,
 )

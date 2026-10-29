@@ -29,6 +29,7 @@ class Lumen(
     return StatusResult(
       retentionDays = store.config.retentionDays,
       logPageSize = store.config.logPageSize,
+      networkReplayLimit = store.config.networkReplayLimit,
       networkCount = store.network.allRecords().size,
       activeLogSegment = store.logs.activeSegmentId,
       segments = store.logs.listSegments().size,
@@ -68,6 +69,7 @@ class Lumen(
     val includeBodies = params?.optBoolean("includeBodies", true) ?: true
     val sessionId = params?.optString("sessionId")?.takeIf { it.isNotEmpty() }
     val file = store.network.exportHarToFile(includeBodies, sessionId)
+      ?: return ValueResult("unknown session $sessionId")
     return ValueResult(file.absolutePath)
   }
 
@@ -78,16 +80,18 @@ class Lumen(
     return ValueResult(file.absolutePath)
   }
 
+  /** Network history per launch on disk, oldest first; `requestCount` reads every file. */
   @ChromeDevtoolsMethod
   fun listNetworkSessions(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
-    val items = store.network.listSessions().map { s ->
+    val items = store.network.listSessions(countRequests = true).map { s ->
       SessionItem(
         id = s.id,
         pid = s.pid ?: 0,
+        startedAtMs = s.startedAtMs ?: 0L,
         path = s.path,
         sizeBytes = s.sizeBytes,
         modifiedAtMs = s.modifiedAtMs,
-        entryCount = s.entryCount,
+        requestCount = s.requestCount ?: 0,
         current = s.current,
       )
     }
@@ -155,42 +159,72 @@ class Lumen(
   // Compact reads over the EventStore for scripts (the Lumen skill's CLI). Chrome's
   // panels never call these; they replay events instead.
 
-  /** Newest-last request summaries. Filters: `urlContains`, `method`, `status`, `failed`. */
+  /**
+   * Newest-last request summaries. Filters: `urlContains`, `method`, `status`, `failed`.
+   * Without `sessionId`: what memory holds of this launch (the newest 1000 plus unfinished ones). With one (see
+   * [listNetworkSessions]): that whole launch, read back from disk where needed.
+   */
   @ChromeDevtoolsMethod
   fun listRequests(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
+    val sessionId = params?.optString("sessionId")?.takeIf { it.isNotEmpty() }
     val urlContains = params?.optString("urlContains").orEmpty()
     val method = params?.optString("method").orEmpty()
     val status = params?.optInt("status", 0) ?: 0
     val failedOnly = params?.optBoolean("failed", false) ?: false
-    val limit = (params?.optInt("limit", 50) ?: 50).coerceIn(1, 1_000)
-    val matches = store.network.allRecords().filter { r ->
-      (urlContains.isEmpty() || r.url.contains(urlContains, ignoreCase = true)) &&
+    // A whole launch read back from disk can hold far more than memory's 1000.
+    val limit = (params?.optInt("limit", 50) ?: 50).coerceIn(1, 20_000)
+    // Records stream past; only the newest `limit` summaries are kept.
+    val newest = ArrayDeque<JSONObject>()
+    var total = 0
+    val collect = { r: NetworkRecord ->
+      if ((urlContains.isEmpty() || r.url.contains(urlContains, ignoreCase = true)) &&
         (method.isEmpty() || r.method.equals(method, ignoreCase = true)) &&
         (status == 0 || r.statusCode == status) &&
         (!failedOnly || r.failedReason != null || (r.statusCode ?: 0) >= 400)
+      ) {
+        total++
+        newest.addLast(summary(r))
+        if (newest.size > limit) newest.removeFirst()
+      }
+    }
+    if (sessionId == null) {
+      store.network.allRecords().forEach(collect)
+    } else if (!store.network.forEachInSession(sessionId, collect)) {
+      return RawJsonResult(JSONObject().put("error", "unknown-session"))
     }
     val requests = JSONArray()
-    for (r in matches.takeLast(limit)) requests.put(summary(r))
-    return RawJsonResult(JSONObject().put("total", matches.size).put("requests", requests))
+    for (summary in newest) requests.put(summary)
+    return RawJsonResult(JSONObject().put("total", total).put("requests", requests))
   }
 
   /**
    * One exchange in full: headers, request body, response body (decoded; base64 when
-   * binary), and the newest WebSocket frames. `maxBodyChars` caps the response body.
+   * binary), and the newest WebSocket frames. `maxBodyChars` caps the response body. Finds
+   * earlier launches too (newest first; `sessionId` picks one), read back from disk without
+   * WebSocket frames (`fromDisk`).
    */
   @ChromeDevtoolsMethod
   fun getRequest(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
     val id = params?.optString("requestId").orEmpty()
-    val record = store.network.get(id) ?: return RawJsonResult(JSONObject().put("error", "not-found"))
+    val sessionId = params?.optString("sessionId")?.takeIf { it.isNotEmpty() }
+    if (sessionId != null && !store.network.hasSession(sessionId)) {
+      return RawJsonResult(JSONObject().put("error", "unknown-session"))
+    }
+    val located = store.network.locate(id, sessionId)
+      ?: return RawJsonResult(JSONObject().put("error", "not-found"))
+    val record = located.record
     val maxBodyChars = (params?.optInt("maxBodyChars", 200_000) ?: 200_000).coerceAtLeast(0)
     val maxFrames = (params?.optInt("maxFrames", 200) ?: 200).coerceAtLeast(0)
     val out = summary(record)
       .put("requestHeaders", JSONObject(record.requestHeaders as Map<*, *>))
       .put("responseHeaders", JSONObject(record.responseHeaders as Map<*, *>))
-      .put("requestBody", record.requestBody ?: JSONObject.NULL)
+      .put("requestBody", store.network.requestBody(record) ?: JSONObject.NULL)
       .put("statusText", record.statusText ?: JSONObject.NULL)
       .put("note", record.note ?: JSONObject.NULL)
-    store.network.readBody(id)?.let { (body, base64) ->
+      .put("sessionId", located.sessionId)
+      .put("currentSession", located.sessionId == store.network.currentSessionId)
+      .put("fromDisk", located.fromDisk)
+    store.network.readBody(record)?.let { (body, base64) ->
       out.put("responseBody", body.take(maxBodyChars))
         .put("responseBodyBase64", base64)
         .put("responseBodyTruncated", body.length > maxBodyChars)
@@ -250,6 +284,7 @@ class Lumen(
   class StatusResult(
     @JvmField @JsonProperty val retentionDays: Int,
     @JvmField @JsonProperty val logPageSize: Int,
+    @JvmField @JsonProperty val networkReplayLimit: Int,
     @JvmField @JsonProperty val networkCount: Int,
     @JvmField @JsonProperty val activeLogSegment: String?,
     @JvmField @JsonProperty val segments: Int,
@@ -280,10 +315,12 @@ class Lumen(
   class SessionItem(
     @JvmField @JsonProperty val id: String,
     @JvmField @JsonProperty val pid: Int,
+    /** 0 for sessions written before launch keys (metadata only). */
+    @JvmField @JsonProperty val startedAtMs: Long,
     @JvmField @JsonProperty val path: String,
     @JvmField @JsonProperty val sizeBytes: Long,
     @JvmField @JsonProperty val modifiedAtMs: Long,
-    @JvmField @JsonProperty val entryCount: Int,
+    @JvmField @JsonProperty val requestCount: Int,
     @JvmField @JsonProperty val current: Boolean,
   )
 

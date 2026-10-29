@@ -58,7 +58,9 @@ class MainActivity : AppCompatActivity() {
   }
 
   private fun runFromIntent(intent: Intent?) {
-    intent?.getStringExtra(EXTRA_FETCH)?.let(viewModel::fetch)
+    intent?.getStringExtra(EXTRA_FETCH)?.let { url ->
+      viewModel.fetch(url, intent.getIntExtra(EXTRA_COUNT, 1).coerceIn(1, 10_000))
+    }
     val name = intent?.getStringExtra(EXTRA_SCENARIO) ?: return
     val scenario = Scenario.parse(name)
     if (scenario == null) {
@@ -73,5 +75,8 @@ class MainActivity : AppCompatActivity() {
 
     /** `--es fetch <url>`: one GET through the app's client, e.g. to try a mock rule. */
     const val EXTRA_FETCH = "fetch"
+
+    /** `--ei count <n>` with `fetch`: n GETs one after another, e.g. to fill the network history. */
+    const val EXTRA_COUNT = "count"
   }
 }

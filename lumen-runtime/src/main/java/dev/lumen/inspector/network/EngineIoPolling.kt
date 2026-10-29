@@ -134,7 +134,9 @@ object EngineIoPolling {
         ),
       )
     } else {
-      store.network.update(id) {
+      // Runs for every polling exchange and changes nothing a session line carries: writing
+      // one each time would give this row a line per packet for as long as the session lives.
+      store.network.update(id, persistMeta = false) {
         it.resourceType = "WebSocket"
         it.isWebSocket = true
       }

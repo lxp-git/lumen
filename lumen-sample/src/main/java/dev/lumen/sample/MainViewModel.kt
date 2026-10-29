@@ -35,8 +35,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
   }
 
-  fun fetch(url: String) {
-    viewModelScope.launch { print(demos.fetch(url)) }
+  fun fetch(url: String, count: Int = 1) {
+    viewModelScope.launch {
+      if (count == 1) {
+        print(demos.fetch(url))
+        return@launch
+      }
+      repeat(count) { demos.fetch(url) }
+      print("fetched $url $count times")
+    }
   }
 
   private fun print(line: String) {

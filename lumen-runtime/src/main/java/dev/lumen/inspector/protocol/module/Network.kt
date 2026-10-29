@@ -1,6 +1,7 @@
 package dev.lumen.inspector.protocol.module
 
-import android.os.SystemClock
+import dev.lumen.common.LogRedirector
+import dev.lumen.inspector.jsonrpc.DisconnectReceiver
 import dev.lumen.inspector.jsonrpc.JsonRpcException
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer
 import dev.lumen.inspector.jsonrpc.JsonRpcResult
@@ -15,14 +16,19 @@ import dev.lumen.store.NetworkRecord
 import dev.lumen.store.WsFrame
 import org.json.JSONObject
 import java.io.IOException
+import java.nio.channels.NotYetConnectedException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 
 /**
  * CDP Network domain driven by [EventStore].
- * On enable, replays the current-process session window then streams live events
- * (live push still originates from [dev.lumen.inspector.network.NetworkEventReporterImpl]
- * and [dev.lumen.okhttp.LumenInterceptor]).
+ * On enable, replays this launch in the background ([dev.lumen.store.NetworkArchive.replay])
+ * while live events stream (live push still originates from
+ * [dev.lumen.inspector.network.NetworkEventReporterImpl] and [dev.lumen.okhttp.LumenInterceptor]).
  */
 class Network(
   private val store: EventStore,
@@ -30,12 +36,23 @@ class Network(
 
   private val peerManager: NetworkPeerManager = NetworkPeerManager.getOrCreateInstance()
 
+  /**
+   * Replays run here, not on the connection's read loop: a long launch takes seconds, and
+   * every other DevTools request on the connection would wait behind it.
+   */
+  private val replayExecutor = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "lumen-net-replay").apply { isDaemon = true }
+  }
+
+  /** Cancel flag of each peer's replay that has not finished yet. */
+  private val replays = ConcurrentHashMap<JsonRpcPeer, AtomicBoolean>()
+
   @ChromeDevtoolsMethod
   fun enable(peer: JsonRpcPeer, params: JSONObject?) {
-    // Chrome re-calls Network.enable during Target attach. Replaying
-    // webSocketCreated a second time resets the Messages tab — skip the
-    // handshake if this peer already got it, but still replay frames onto
-    // the existing NetworkRequest.
+    // Chrome re-calls Network.enable during Target attach on the same connection.
+    // Replay only on a peer's first enable: a second pass would duplicate every
+    // row, and a second webSocketCreated resets the Messages tab. Network.disable
+    // unregisters the peer, so a later enable replays again.
     val firstPeer = peerManager.addPeer(peer)
     dev.lumen.common.LogRedirector.i(
       "LumenCDP",
@@ -44,11 +61,12 @@ class Network(
     if (!firstPeer) {
       return
     }
-    replaySession(peer)
+    startReplay(peer)
   }
 
   @ChromeDevtoolsMethod
   fun disable(peer: JsonRpcPeer, params: JSONObject?) {
+    replays.remove(peer)?.set(true)
     peerManager.removePeer(peer)
   }
 
@@ -90,8 +108,8 @@ class Network(
   @ChromeDevtoolsMethod
   fun getRequestPostData(peer: JsonRpcPeer, params: JSONObject?): JsonRpcResult {
     val requestId = params?.optString("requestId").orEmpty()
-    val rec = store.network.get(requestId)
-    return PostDataResult(rec?.requestBody ?: "")
+    val rec = store.network.find(requestId)
+    return PostDataResult(rec?.let { store.network.requestBody(it) } ?: "")
   }
 
   class BooleanResult(
@@ -112,8 +130,9 @@ class Network(
       }
     }
     // Never throw — Chrome's Network panel calls this optimistically and a
-    // JSON-RPC error is noisy.
-    store.network.readBody(requestId)?.let { body ->
+    // JSON-RPC error is noisy. find() also covers rows memory has dropped and,
+    // with the adb sidecar, rows an earlier launch left in the window.
+    store.network.find(requestId)?.let { store.network.readBody(it) }?.let { body ->
       return GetResponseBodyResponse().also {
         it.body = body.first
         it.base64Encoded = body.second
@@ -153,14 +172,14 @@ class Network(
 
   private fun collectSearchableText(requestId: String): String {
     transcriptBody(requestId)?.let { return it }
-    val record = store.network.get(requestId)
+    val record = store.network.find(requestId) ?: return ""
     val chunks = ArrayList<String>()
     // Binary bodies come back base64; searching their encoding finds nothing useful.
-    store.network.readBody(requestId)?.let { (body, base64) ->
+    store.network.readBody(record)?.let { (body, base64) ->
       if (!base64 && body.isNotEmpty()) chunks.add(body)
     }
-    record?.requestBody?.takeIf { it.isNotEmpty() }?.let { chunks.add(it) }
-    record?.wsFrames?.snapshot()?.forEach { frame ->
+    store.network.requestBody(record)?.takeIf { it.isNotEmpty() }?.let { chunks.add(it) }
+    record.wsFrames.snapshot().forEach { frame ->
       if (frame.payload.isNotEmpty()) {
         chunks.add(frame.payload)
       }
@@ -203,28 +222,57 @@ class Network(
     return matches
   }
 
-  private fun replaySession(peer: JsonRpcPeer) {
-    val records = store.network.snapshotForReplay()
-    for (record in records) {
-      if (record.isWebSocket || record.resourceType.equals("WebSocket", ignoreCase = true)) {
-        // Skip handshake attempts that never opened — they used to flood
-        // Chrome's Network list with empty WebSocket rows.
-        if (record.statusCode == 101 || !record.wsFrames.isEmpty()) {
-          emitWebSocketReplay(peer, record)
+  /** Replays this launch to [peer] in the background; live events keep flowing meanwhile. */
+  private fun startReplay(peer: JsonRpcPeer) {
+    val cancelled = AtomicBoolean(false)
+    replays.put(peer, cancelled)?.set(true)
+    peer.registerDisconnectReceiver(DisconnectReceiver { cancelled.set(true) })
+    try {
+      replayExecutor.execute {
+        try {
+          store.network.replay { record ->
+            if (cancelled.get()) throw ReplayCancelled()
+            replayRecord(peer, record)
+          }
+        } catch (_: ReplayCancelled) {
+        } catch (_: NotYetConnectedException) {
+          // DevTools went away mid-replay.
+        } catch (t: Throwable) {
+          LogRedirector.w("LumenCDP", "network replay failed", t)
+        } finally {
+          replays.remove(peer, cancelled)
         }
-        continue
       }
-      emitRequestWillBeSent(peer, record)
-      if (record.statusCode != null) {
-        emitResponseReceived(peer, record)
-        if (record.failedReason != null) {
-          emitLoadingFailed(peer, record)
-        } else if (record.finishedAtMs != null) {
-          emitLoadingFinished(peer, record)
-        }
-      } else if (record.failedReason != null) {
+    } catch (_: RejectedExecutionException) {
+    }
+  }
+
+  /** Unwinds a replay whose peer disabled Network or disconnected. */
+  private class ReplayCancelled : RuntimeException() {
+    override fun fillInStackTrace(): Throwable = this
+  }
+
+  private fun replayRecord(peer: JsonRpcPeer, record: NetworkRecord) {
+    if (record.isWebSocket || record.resourceType.equals("WebSocket", ignoreCase = true)) {
+      // Skip handshake attempts that never opened — they used to flood
+      // Chrome's Network list with empty WebSocket rows. A socket read back
+      // from disk has no frames left, only their count (Socket.IO polling
+      // sessions never get a 101).
+      if (record.statusCode == 101 || !record.wsFrames.isEmpty() || record.wsFrameCount > 0) {
+        emitWebSocketReplay(peer, record)
+      }
+      return
+    }
+    emitRequestWillBeSent(peer, record)
+    if (record.statusCode != null) {
+      emitResponseReceived(peer, record)
+      if (record.failedReason != null) {
         emitLoadingFailed(peer, record)
+      } else if (record.finishedAtMs != null) {
+        emitLoadingFinished(peer, record)
       }
+    } else if (record.failedReason != null) {
+      emitLoadingFailed(peer, record)
     }
   }
 
@@ -350,7 +398,8 @@ class Network(
       it.url = record.url
       it.method = record.method
       it.headers = headersJson(record.requestHeaders)
-      it.postData = record.requestBody
+      // A record read back from disk has its body in a file, not in memory.
+      it.postData = store.network.requestBody(record)
     }
     val initiator = Initiator().also {
       it.type = InitiatorType.OTHER
@@ -407,7 +456,9 @@ class Network(
   private fun emitLoadingFailed(peer: JsonRpcPeer, record: NetworkRecord) {
     val params = LoadingFailedParams().also {
       it.requestId = record.requestId
-      it.timestamp = SystemClock.elapsedRealtime() / 1000.0
+      // When it failed, not now: the replay clock would stretch the row to the attach time.
+      it.timestamp = record.startedAtMonotonicMs / 1000.0 +
+        ((record.finishedAtMs ?: record.startedAtMs) - record.startedAtMs) / 1000.0
       it.errorText = record.failedReason ?: "failed"
       it.type = resourceType(record)
     }

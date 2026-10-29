@@ -55,8 +55,9 @@ lumen {
   enabled = true             // false: skip Lumen entirely (e.g. for a CI flavor)
   debugOnly = true           // false: also non-debuggable variants (not recommended)
   injectOkHttp = true        // weave the interceptor into OkHttpClient.Builder.build()
-  retentionDays = 7          // logcat archive and network metadata on disk
-  networkBodyQuotaMb = 512   // total size of spilled response bodies, oldest dropped first
+  retentionDays = 7          // logcat archive and network history on disk
+  networkBodyQuotaMb = 512   // network history on disk (bodies, earlier launches), oldest dropped first
+  networkReplayLimit = 0     // exchanges replayed when DevTools attaches, newest kept; 0 = the whole launch
   logPageSize = 1000         // log lines replayed when DevTools attaches
   wsMaxFrames = 2500         // frames kept per WebSocket for late attach
   wsMaxFrameChars = 16384    // characters kept per frame
@@ -66,6 +67,11 @@ lumen {
   debugLogs = false          // Lumen's own diagnostics in logcat (tags Lumen*)
 }
 ```
+
+When DevTools attaches, the whole launch streams into the Network panel at about 1,400
+exchanges per second (measured on a 2019 phone) while the other panels load. Set
+`networkReplayLimit` for apps that make tens of thousands of requests per launch;
+`lumen.py net --session` still reads the whole launch.
 
 ## Mock rules
 
@@ -116,7 +122,7 @@ adb shell content call --uri content://<applicationId>.lumen-adb --method listLo
 |---|---|
 | `lumen.py targets` lists nothing | App not running, release variant, or plugin not applied to the app module. Check `adb shell cat /proc/net/unix \| grep lumen_`. |
 | Several targets | Another app or process also embeds Lumen; pass `-p <applicationId>` (process names like `pkg:remote` match their package). |
-| Requests missing from `net` | Not OkHttp (HttpURLConnection, Cronet, WebView), or a different process. Records are per process: an app restart clears the list. |
+| Requests missing from `net` | Not OkHttp (HttpURLConnection, Cronet, WebView), or a different process. `net` shows what memory holds (the newest 1000 exchanges, plus unfinished ones); after a restart, or for older ones, use `sessions` then `net --session ID`. |
 | `kv set` fails | Only existing keys can be edited and the value must parse as the stored type. Proto DataStore is read-only. |
 | DataStore edit seems ignored | The app caches the value in memory; reopen the screen or restart. |
 | Mock not used | Rule order: runtime and recorded rules first, then assets in file order. `lumen.py mock list`; check `method` and the URL form actually requested (`net`). |

@@ -13,12 +13,18 @@ data class LumenConfig(
   val retentionDays: Int = 7,
   /** Console-safe page size when replaying logcat to DevTools. */
   val logPageSize: Int = 1_000,
-  /** Soft cap on retained response bodies (bytes). Oldest bodies pruned first. */
+  /**
+   * Soft cap on network history on disk (bytes): request and response bodies plus earlier
+   * launches' session files. Oldest pruned first.
+   */
   val networkBodyQuotaBytes: Long = 512L * 1024 * 1024,
   /** Max bytes stored per individual response body. */
   val maxBodyBytes: Long = 2L * 1024 * 1024,
-  /** How many network exchanges to replay on Network.enable (current process). */
-  val networkReplayLimit: Int = 200,
+  /**
+   * How many network exchanges of this launch Network.enable replays, newest kept. 0 replays
+   * the whole launch, reading what memory no longer holds back from disk.
+   */
+  val networkReplayLimit: Int = 0,
   /**
    * Max archived WebSocket frames kept per connection for late-connect replay.
    * Sized for Socket.IO LLM streams (many deltas + Engine.IO ping/pong).
@@ -66,6 +72,7 @@ data class LumenConfig(
         retentionDays = intRes("lumen_retention_days", 7).coerceAtLeast(1),
         logPageSize = intRes("lumen_log_page_size", 1_000).coerceAtLeast(100),
         networkBodyQuotaBytes = quotaMb * 1024L * 1024L,
+        networkReplayLimit = intRes("lumen_network_replay_limit", 0).coerceAtLeast(0),
         maxWsFramesPerSocket = intRes("lumen_ws_max_frames", 2_500).coerceAtLeast(50),
         maxWsFrameChars = intRes("lumen_ws_max_frame_chars", 16_384).coerceAtLeast(256),
         mockEnabled = boolRes("lumen_mock_enabled", true),

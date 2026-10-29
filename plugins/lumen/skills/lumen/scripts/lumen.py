@@ -9,6 +9,7 @@ and manages mock rules. Python 3.8+ standard library only.
     lumen.py targets                      # Lumen processes on the device
     lumen.py net --url api/ --failed      # captured HTTP / WebSocket exchanges
     lumen.py req <id>                     # one exchange with headers and body
+    lumen.py sessions                     # earlier launches kept on disk (net/har --session)
     lumen.py logs --level warning --grep crash
     lumen.py kv list | kv set "SharedPreferences / prefs / onboarded" false
     lumen.py db list | db sql app.db "SELECT * FROM users LIMIT 5"
@@ -339,9 +340,9 @@ def cmd_status(cdp, args):
                    "device": version.get("userAgent")})
 
     def human(d):
-        for k in ("process", "lumen", "device", "networkCount", "segments", "activeLogSegment",
-                  "retentionDays", "mockRuleCount", "mockRecording"):
-            print("%-17s %s" % (k, d.get(k)))
+        for k in ("process", "lumen", "device", "networkCount", "networkReplayLimit", "segments",
+                  "activeLogSegment", "retentionDays", "mockRuleCount", "mockRecording"):
+            print("%-19s %s" % (k, d.get(k)))
 
     emit(args, status, human)
 
@@ -354,7 +355,11 @@ def cmd_net(cdp, args):
         params["method"] = args.method
     if args.status:
         params["status"] = args.status
+    if args.session:
+        params["sessionId"] = args.session
     result = cdp.call("Lumen.listRequests", params)
+    if result.get("error"):
+        raise LumenError("no session %s (see `sessions`)" % args.session)
 
     def human(d):
         for r in d["requests"]:
@@ -369,11 +374,25 @@ def cmd_net(cdp, args):
     emit(args, result, human)
 
 
-def cmd_req(cdp, args):
-    r = cdp.call("Lumen.getRequest", {"requestId": args.id, "maxBodyChars": args.body_chars,
-                                      "maxFrames": args.frames})
+def check_request(r, args):
+    if r.get("error") == "unknown-session":
+        raise LumenError("no session %s (see `sessions`)" % args.session)
     if r.get("error"):
         raise LumenError("no captured request %s (see `net` for ids)" % args.id)
+
+
+def request_params(args, **extra):
+    params = {"requestId": args.id}
+    if args.session:
+        params["sessionId"] = args.session
+    params.update(extra)
+    return params
+
+
+def cmd_req(cdp, args):
+    r = cdp.call("Lumen.getRequest", request_params(args, maxBodyChars=args.body_chars,
+                                                    maxFrames=args.frames))
+    check_request(r, args)
 
     def human(d):
         print("%s %s\nstatus %s %s  %s  %s bytes  %sms%s" % (
@@ -383,6 +402,9 @@ def cmd_req(cdp, args):
             print("failed: " + d["failed"])
         if d.get("note"):
             print("note: " + d["note"])
+        if d.get("fromDisk"):
+            launch = "this launch" if d.get("currentSession") else d.get("sessionId")
+            print("(%s, read back from disk: WebSocket frames are not kept)" % launch)
         print("\n> request headers")
         for k, v in d["requestHeaders"].items():
             print("  %s: %s" % (k, v))
@@ -402,9 +424,9 @@ def cmd_req(cdp, args):
 
 
 def cmd_body(cdp, args):
-    r = cdp.call("Lumen.getRequest", {"requestId": args.id, "maxBodyChars": 2 ** 31 - 1,
-                                      "maxFrames": 0})
-    if r.get("error") or "responseBody" not in r:
+    r = cdp.call("Lumen.getRequest", request_params(args, maxBodyChars=2 ** 31 - 1, maxFrames=0))
+    check_request(r, args)
+    if "responseBody" not in r:
         raise LumenError("no response body captured for %s" % args.id)
     data = base64.b64decode(r["responseBody"]) if r["responseBodyBase64"] else \
         r["responseBody"].encode("utf-8")
@@ -603,8 +625,27 @@ def cmd_ui(cdp, args):
     print("\n".join(lines))
 
 
+def cmd_sessions(cdp, args):
+    result = cdp.call("Lumen.listNetworkSessions")
+
+    def human(d):
+        for s in d["sessions"]:
+            started = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(s["startedAtMs"] / 1000.0))
+                       if s["startedAtMs"] else "metadata only")
+            print("%-34s %-19s %6d requests %7.1f MB%s" % (
+                s["id"], started, s["requestCount"], s["sizeBytes"] / 1048576.0,
+                "  (this launch)" if s["current"] else ""))
+        if not d["sessions"]:
+            print("(no sessions on disk)")
+
+    emit(args, result, human)
+
+
 def cmd_har(cdp, args):
-    path = cdp.call("Lumen.exportHar", {"includeBodies": not args.no_bodies}).get("value")
+    params = {"includeBodies": not args.no_bodies}
+    if args.session:
+        params["sessionId"] = args.session
+    path = cdp.call("Lumen.exportHar", params).get("value")
     if not path or not path.startswith("/"):
         raise LumenError("exportHar failed: %s" % path)
     package = cdp.call("Target.getTargetInfo")["targetInfo"]["title"].split(":")[0]
@@ -648,15 +689,20 @@ def build_parser():
     s.add_argument("--status", type=int)
     s.add_argument("--failed", action="store_true", help="only errors and HTTP >= 400")
     s.add_argument("--limit", type=int, default=50)
+    s.add_argument("--session", help="an earlier launch from `sessions` (default: this one)")
 
     s = sub.add_parser("req", help="one exchange: headers, bodies, WebSocket frames")
     s.add_argument("id")
     s.add_argument("--body-chars", type=int, default=20000)
     s.add_argument("--frames", type=int, default=100, help="newest WebSocket frames to show")
+    s.add_argument("--session", help="look only in this launch (ids repeat when pids are reused)")
 
     s = sub.add_parser("body", help="raw response body (decoded) to stdout or a file")
     s.add_argument("id")
     s.add_argument("-o", "--output")
+    s.add_argument("--session", help="look only in this launch")
+
+    sub.add_parser("sessions", help="network history per launch kept on disk")
 
     s = sub.add_parser("logs", help="search archived logcat, or --follow live")
     s.add_argument("--grep", help="case-insensitive substring")
@@ -716,6 +762,7 @@ def build_parser():
     s = sub.add_parser("har", help="export captured traffic as HAR 1.2")
     s.add_argument("-o", "--output")
     s.add_argument("--no-bodies", action="store_true")
+    s.add_argument("--session", help="an earlier launch from `sessions` (default: this one)")
 
     s = sub.add_parser("cdp", help="raw CDP call, e.g. cdp Network.getResponseBody '{...}'")
     s.add_argument("method")
@@ -726,6 +773,7 @@ def build_parser():
 
 COMMANDS = {
     "status": cmd_status, "net": cmd_net, "req": cmd_req, "body": cmd_body, "logs": cmd_logs,
+    "sessions": cmd_sessions,
     "mock": cmd_mock, "kv": cmd_kv, "db": cmd_db, "ui": cmd_ui, "har": cmd_har, "cdp": cmd_cdp,
 }
 

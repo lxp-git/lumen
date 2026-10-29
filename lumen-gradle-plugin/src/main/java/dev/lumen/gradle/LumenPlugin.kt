@@ -68,6 +68,7 @@ class LumenPlugin : Plugin<Project> {
         task.retentionDays.set(ext.retentionDays)
         task.logPageSize.set(ext.logPageSize)
         task.networkBodyQuotaMb.set(ext.networkBodyQuotaMb)
+        task.networkReplayLimit.set(ext.networkReplayLimit)
         task.wsMaxFrames.set(ext.wsMaxFrames)
         task.wsMaxFrameChars.set(ext.wsMaxFrameChars)
         task.mockEnabled.set(ext.mockEnabled)

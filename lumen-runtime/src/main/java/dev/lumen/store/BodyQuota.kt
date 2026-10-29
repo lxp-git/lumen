@@ -5,7 +5,8 @@ import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Keeps the spilled response bodies under [dev.lumen.LumenConfig.networkBodyQuotaBytes].
+ * Keeps the network history on disk (spilled bodies and earlier launches' session files) under
+ * [dev.lumen.LumenConfig.networkBodyQuotaBytes].
  *
  * The directory can hold thousands of files, so every size and timestamp is read once per pass
  * (a comparator calling [File.lastModified] costs n·log n stat calls) and the oldest-first sort
@@ -13,9 +14,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 internal object BodyQuota {
   fun prune(dir: File, quotaBytes: Long) {
-    val files = dir.listFiles() ?: return
+    prune(dir.listFiles()?.asList() ?: return, quotaBytes)
+  }
+
+  /**
+   * [pinnedBytes] (the live session file) count toward the quota but are never deleted. They
+   * count for at most half of it, so a huge live file cannot make every pass delete every body.
+   */
+  fun prune(files: List<File>, quotaBytes: Long, pinnedBytes: Long = 0) {
     val lengths = LongArray(files.size) { files[it].length() }
-    var total = lengths.sum()
+    var total = lengths.sum() + minOf(pinnedBytes, quotaBytes / 2)
     if (total <= quotaBytes) return
     val modified = LongArray(files.size) { files[it].lastModified() }
     for (i in files.indices.sortedBy { modified[it] }) {
