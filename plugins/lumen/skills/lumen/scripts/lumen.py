@@ -13,7 +13,7 @@ and manages mock rules. Python 3.8+ standard library only.
     lumen.py logs --level warning --grep crash
     lumen.py kv list | kv set "SharedPreferences / prefs / onboarded" false
     lumen.py db list | db sql app.db "SELECT * FROM users LIMIT 5"
-    lumen.py ui --grep Button             # View hierarchy (Elements tab)
+    lumen.py ui --grep Button             # View hierarchy (apps on Lumen <= 0.3.0)
     lumen.py mock add --url-contains /v1/me --status 500 --body '{"error":"boom"}'
 
 Environment: ANDROID_SERIAL (device), LUMEN_PACKAGE (target app), ADB (adb binary).
@@ -614,7 +614,11 @@ def ui_lines(node, depth, max_depth, out):
 
 def cmd_ui(cdp, args):
     cdp.call("DOM.enable")
-    root = cdp.call("DOM.getDocument", {"depth": -1})["root"]
+    root = cdp.call("DOM.getDocument", {"depth": -1}).get("root")
+    if root is None:
+        # Lumen after 0.3.0 leaves DOM out; the dispatcher acknowledges it with {}.
+        raise LumenError("this app's Lumen has the View tree (DOM / Elements) turned off; "
+                         "only Lumen 0.3.0 and earlier serve it")
     if args.json:
         print(json.dumps(root, indent=2, ensure_ascii=False))
         return

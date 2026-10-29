@@ -97,7 +97,7 @@ Recorded DevTools overrides (with `mockRecordOverrides = true`) are stored under
 
 ## Chrome DevTools
 
-`chrome://inspect/#devices` → inspect `lumen://<process>`. Network, Console, Elements and
+`chrome://inspect/#devices` → inspect `lumen://<process>`. Network, Console and
 Application → Local Storage / IndexedDB work like for a web page. To keep the inspect window
 across app restarts, run the adb sidecar once per USB session (from the Lumen repo):
 

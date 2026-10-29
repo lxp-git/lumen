@@ -49,6 +49,13 @@ public class ObjectMapper {
   private final Map<Class<?>, Method> mJsonValueMethodCache = new IdentityHashMap<>();
 
   /**
+   * ART allocates a new annotation proxy on every {@link Field#getAnnotation} and a new array on
+   * every {@link Class#getFields}; uncached, encoding a large DOM subtree spent seconds there.
+   */
+  @GuardedBy("sJsonFieldCache")
+  private static final Map<Class<?>, JsonField[]> sJsonFieldCache = new IdentityHashMap<>();
+
+  /**
    * Support mapping between arbitrary classes and {@link JSONObject}.
    * <note>
    *   It is possible for a {@link Throwable} to be propagated out of this class if there is an
@@ -240,32 +247,60 @@ public class ObjectMapper {
   private JSONObject _convertToJSONObject(Object fromValue)
       throws JSONException, InvocationTargetException, IllegalAccessException {
     JSONObject jsonObject = new JSONObject();
-    Field[] fields = fromValue.getClass().getFields();
+    JsonField[] fields = getJsonFields(fromValue.getClass());
     for (int i = 0; i < fields.length; ++i) {
-      Field field = fields[i];
-      if (Modifier.isStatic(field.getModifiers())) {
-        continue;
+      JsonField jsonField = fields[i];
+      Field field = jsonField.field;
+      // AutoBox here ...
+      Object value = field.get(fromValue);
+      Class clazz = field.getType();
+      if (value != null) {
+        clazz = value.getClass();
       }
-      JsonProperty property = field.getAnnotation(JsonProperty.class);
-      if (property != null) {
-        // AutoBox here ...
-        Object value = field.get(fromValue);
-        Class clazz = field.getType();
-        if (value != null) {
-          clazz = value.getClass();
-        }
-        String name = field.getName();
-        if (property.required() && value == null) {
-          value = JSONObject.NULL;
-        } else if (value == JSONObject.NULL) {
-          // Leave it as null in this case.
-        } else {
-          value = getJsonValue(value, clazz, field);
-        }
-        jsonObject.put(name, value);
+      if (jsonField.required && value == null) {
+        value = JSONObject.NULL;
+      } else if (value == JSONObject.NULL) {
+        // Leave it as null in this case.
+      } else {
+        value = getJsonValue(value, clazz, field);
       }
+      jsonObject.put(jsonField.name, value);
     }
     return jsonObject;
+  }
+
+  private static JsonField[] getJsonFields(Class<?> clazz) {
+    synchronized (sJsonFieldCache) {
+      JsonField[] cached = sJsonFieldCache.get(clazz);
+      if (cached != null) {
+        return cached;
+      }
+      List<JsonField> jsonFields = new ArrayList<>();
+      for (Field field : clazz.getFields()) {
+        if (Modifier.isStatic(field.getModifiers())) {
+          continue;
+        }
+        JsonProperty property = field.getAnnotation(JsonProperty.class);
+        if (property != null) {
+          jsonFields.add(new JsonField(field, property.required()));
+        }
+      }
+      JsonField[] result = jsonFields.toArray(new JsonField[0]);
+      sJsonFieldCache.put(clazz, result);
+      return result;
+    }
+  }
+
+  private static final class JsonField {
+    final Field field;
+    final String name;
+    final boolean required;
+
+    JsonField(Field field, boolean required) {
+      this.field = field;
+      this.name = field.getName();
+      this.required = required;
+    }
   }
 
   private Object getJsonValue(Object value, Class<?> clazz, Field field)

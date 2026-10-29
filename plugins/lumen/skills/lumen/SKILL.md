@@ -9,7 +9,7 @@ allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/lumen.py *)
 [Lumen](https://github.com/lxp-git/lumen) is a debug-only agent inside an Android app. It
 records OkHttp traffic and logcat from process start and serves the Chrome DevTools Protocol
 over adb. `scripts/lumen.py` (Python 3, standard library only) talks to it directly, so you
-get the same data as Chrome's Network / Console / Application / Elements panels as text.
+get the same data as Chrome's Network / Console / Application panels as text.
 
 Run it as:
 
@@ -118,7 +118,8 @@ Restart the screen or app afterwards if it caches the value in memory.
 lumen.py ui --grep Button          # class, id and text per view
 ```
 
-Lumen walks the classic View tree. Jetpack Compose content appears as one `ComposeView`.
+Only apps on Lumen 0.3.0 or earlier serve the View tree; later versions turn it off and `ui`
+says so. It never covered Jetpack Compose content (one `ComposeView`).
 
 **Long-lived connections**: `req <id>` on a WebSocket row lists its frames (`send` / `recv`);
 Socket.IO sessions, including the polling transport, appear as one WebSocket row each.

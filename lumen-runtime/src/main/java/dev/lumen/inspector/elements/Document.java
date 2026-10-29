@@ -352,8 +352,7 @@ public final class Document extends ThreadBoundProxy {
   }
 
   private void applyDocumentUpdate(final ShadowDocument.Update docUpdate) {
-    // TODO: it'd be nice if we could delegate our calls into mPeerManager.sendNotificationToPeers()
-    //       to a background thread so as to offload the UI from JSON serialization stuff
+    // Listeners run on the UI thread; DOM only snapshots nodes here and encodes them elsewhere.
 
     // Applying the ShadowDocument.Update is done in five stages:
 

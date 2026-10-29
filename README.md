@@ -44,15 +44,15 @@ in and weaves OkHttp. Release builds contain no Lumen code.
 | Network | OkHttp HTTP: the whole launch, including traffic from before inspect; gzip and binary bodies decoded on view. Earlier launches stay on disk (`lumen.py sessions`) |
 | Network → Messages | OkHttp WebSocket; Socket.IO `transport=websocket` and OkHttp `transport=polling` |
 | Console | logcat (`V`–`E`), paged; 7-day archive |
-| Elements | Classic View tree |
 | Network → Fetch / Local Overrides | Mock OkHttp (`src/debug/assets/lumen-mocks/*.json` also works without DevTools) |
 | Application → IndexedDB | SharedPreferences / DataStore / MMKV (view + delete) |
 | Application → Local Storage | Same KV, editable; keys are `Engine / store / key` |
 | — (CLI / CDP only) | SQLite and Room databases (`Database.*`; Chrome no longer shows Web SQL) |
 
 Not captured: HttpURLConnection, Cronet, WebView traffic, Socket.IO polling that does not go
-through OkHttp. Page screencast is not supported. Jetpack Compose content shows up as a single
-`ComposeView` in Elements.
+through OkHttp. Page screencast is not supported. Elements (the View tree) is turned off: its
+UI-thread tree walk could stall large screens, and Compose content only showed up as one
+`ComposeView`.
 
 Works with AGP 8 and 9, OkHttp 4 and 5. minSdk 24 for 0.3.0; the next release accepts 21.
 

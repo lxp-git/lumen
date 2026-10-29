@@ -7,14 +7,9 @@ import dev.lumen.common.LogUtil
 import dev.lumen.init.DevtoolsEarlyBind
 import dev.lumen.inspector.ChromeDevtoolsServer
 import dev.lumen.inspector.database.SqliteDatabaseDriver
-import dev.lumen.inspector.elements.Document
-import dev.lumen.inspector.elements.android.ActivityTracker
-import dev.lumen.inspector.elements.android.AndroidDocumentProviderFactory
 import dev.lumen.inspector.protocol.ChromeDevtoolsDomain
 import dev.lumen.inspector.protocol.module.Browser
-import dev.lumen.inspector.protocol.module.CSS
 import dev.lumen.inspector.protocol.module.Console
-import dev.lumen.inspector.protocol.module.DOM
 import dev.lumen.inspector.protocol.module.DOMStorage
 import dev.lumen.inspector.protocol.module.Database
 import dev.lumen.inspector.protocol.module.Fetch
@@ -30,7 +25,6 @@ import dev.lumen.mock.MockEngine
 import dev.lumen.store.EventStore
 import dev.lumen.ui.LumenDebugFab
 import java.io.File
-import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -77,8 +71,6 @@ object LumenAgent {
     )
     mockEngine = engine
 
-    ActivityTracker.get().beginTrackingIfPossible(app)
-
     deferred.attach(ChromeDevtoolsServer(buildModules(app, eventStore, engine)))
 
     if (config.debugFabEnabled) {
@@ -98,18 +90,21 @@ object LumenAgent {
   /**
    * The CDP domains Chrome talks to. Anything not listed is stub-acknowledged by
    * [dev.lumen.inspector.MethodDispatcher], which keeps the frontend handshake moving.
+   *
+   * `DOM` + `CSS` (Elements) are left out for now: once enabled they walk the whole view tree
+   * on the UI thread every second, which could ANR a large screen, and Compose UIs show up
+   * there as one opaque view. To bring them back, start `ActivityTracker` in [start] and add
+   * `DOM(document)` + `CSS(document)` over one
+   * `Document(AndroidDocumentProviderFactory(app, emptyList()))`.
    */
   private fun buildModules(
     app: Application,
     eventStore: EventStore,
     engine: MockEngine,
   ): List<ChromeDevtoolsDomain> {
-    val document = Document(AndroidDocumentProviderFactory(app, Collections.emptyList()))
     return listOf(
       Browser(),
       Console(),
-      DOM(document),
-      CSS(document),
       DOMStorage(app),
       IndexedDB(app),
       Log(eventStore),

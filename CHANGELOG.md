@@ -34,6 +34,9 @@
 - Session metadata is batched on a background thread instead of open/append/close per
   update on the OkHttp thread; mock globs are compiled once; startup pruning is off the main
   thread.
+- The CDP JSON mapper caches each class's fields instead of letting ART build fresh
+  annotation objects per value (a 3k-node tree encodes ~3.5× faster on device), and a
+  notification is mapped once for all attached clients.
 
 **Additions**
 - Agent Skill + Claude Code plugin marketplace (`/plugin marketplace add lxp-git/lumen`) with
@@ -51,6 +54,10 @@
 **Removed**
 - Stetho leftovers: dumpapp, the `Lumen.initialize*` builder API, the database driver plugin
   API, Rhino console, screencast, and the upstream `stetho*` modules and scripts.
+- Elements (`DOM` + `CSS`) is off for now. Once enabled it walked the View tree and encoded
+  every change on the UI thread, which could ANR a large screen, and it never showed Compose
+  content. `lumen.py ui` works only with apps on 0.3.0 or earlier. The code stays, with
+  encoding moved off the UI thread and the walk backing off on large trees.
 
 ## 0.3.0 — 2026-09-16
 - Application panel: SharedPreferences, Preferences/Proto DataStore and MMKV in IndexedDB and

@@ -135,6 +135,14 @@ class CdpClientTest(unittest.TestCase):
         self.assertEqual(["Log.entryAdded"], [e["method"] for e in client.events])
         client.ws.close()
 
+    def test_ui_reports_disabled_dom_instead_of_crashing(self):
+        # Without a DOM domain the agent stub-acknowledges DOM.getDocument with {}.
+        server, client = self.connect(lambda msg: [reply(msg, {})])
+        args = lumen.build_parser().parse_args(["ui"])
+        with self.assertRaisesRegex(lumen.LumenError, "turned off"):
+            lumen.cmd_ui(client, args)
+        client.ws.close()
+
     def test_large_and_fragmented_messages(self):
         big = "x" * 200_000  # 64-bit length on the wire
 

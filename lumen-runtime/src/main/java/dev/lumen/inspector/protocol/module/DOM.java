@@ -20,6 +20,7 @@ import dev.lumen.inspector.elements.NodeDescriptor;
 import dev.lumen.inspector.elements.NodeType;
 import dev.lumen.inspector.helper.ChromePeerManager;
 import dev.lumen.inspector.helper.PeersRegisteredListener;
+import dev.lumen.inspector.helper.SerialNotifier;
 import dev.lumen.inspector.jsonrpc.JsonRpcException;
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer;
 import dev.lumen.inspector.jsonrpc.JsonRpcResult;
@@ -45,10 +46,11 @@ public class DOM implements ChromeDevtoolsDomain {
   private final Map<String, List<Integer>> mSearchResults;
   private final AtomicInteger mResultCounter;
   private final ChromePeerManager mPeerManager;
+  private final SerialNotifier mNotifier;
   private final DocumentUpdateListener mListener;
 
-  private ChildNodeRemovedEvent mCachedChildNodeRemovedEvent;
-  private ChildNodeInsertedEvent mCachedChildNodeInsertedEvent;
+  /** How long getDocument waits for earlier DOM events to go out before replying. */
+  private static final long GET_DOCUMENT_EVENTS_WAIT_MS = 5000;
 
   public DOM(Document document) {
     mObjectMapper = new ObjectMapper();
@@ -58,6 +60,7 @@ public class DOM implements ChromeDevtoolsDomain {
     mResultCounter = new AtomicInteger(0);
     mPeerManager = new ChromePeerManager();
     mPeerManager.setListener(new PeerManagerListener());
+    mNotifier = new SerialNotifier(mPeerManager, "lumen-dom-events");
     mListener = new DocumentUpdateListener();
   }
 
@@ -85,6 +88,12 @@ public class DOM implements ChromeDevtoolsDomain {
     } catch (RuntimeException e) {
       LogUtil.w(e, "DOM.getDocument failed");
       result.root = emptyDocument();
+    }
+    // Events queued before the snapshot describe changes it already contains; sent after the
+    // reply, DevTools would apply them twice (e.g. a duplicate inserted subtree).
+    if (!mNotifier.awaitSent(GET_DOCUMENT_EVENTS_WAIT_MS)) {
+      LogUtil.w("DOM.getDocument: earlier DOM events still queued after %s ms",
+          GET_DOCUMENT_EVENTS_WAIT_MS);
     }
     return result;
   }
@@ -310,55 +319,24 @@ public class DOM implements ChromeDevtoolsDomain {
     return node;
   }
 
-  private ChildNodeInsertedEvent acquireChildNodeInsertedEvent() {
-    ChildNodeInsertedEvent childNodeInsertedEvent = mCachedChildNodeInsertedEvent;
-    if (childNodeInsertedEvent == null) {
-      childNodeInsertedEvent = new ChildNodeInsertedEvent();
-    }
-    mCachedChildNodeInsertedEvent = null;
-    return childNodeInsertedEvent;
-  }
-
-  private void releaseChildNodeInsertedEvent(ChildNodeInsertedEvent childNodeInsertedEvent) {
-    childNodeInsertedEvent.parentNodeId = -1;
-    childNodeInsertedEvent.previousNodeId = -1;
-    childNodeInsertedEvent.node = null;
-    if (mCachedChildNodeInsertedEvent == null) {
-      mCachedChildNodeInsertedEvent = childNodeInsertedEvent;
-    }
-  }
-
-  private ChildNodeRemovedEvent acquireChildNodeRemovedEvent() {
-    ChildNodeRemovedEvent childNodeRemovedEvent = mCachedChildNodeRemovedEvent;
-    if (childNodeRemovedEvent == null) {
-      childNodeRemovedEvent = new ChildNodeRemovedEvent();
-    }
-    mCachedChildNodeRemovedEvent = null;
-    return childNodeRemovedEvent;
-  }
-
-  private void releaseChildNodeRemovedEvent(ChildNodeRemovedEvent childNodeRemovedEvent) {
-    childNodeRemovedEvent.parentNodeId = -1;
-    childNodeRemovedEvent.nodeId = -1;
-    if (mCachedChildNodeRemovedEvent == null) {
-      mCachedChildNodeRemovedEvent = childNodeRemovedEvent;
-    }
-  }
-
+  /**
+   * Called on the main thread. Each event is built fresh from plain values (the Node tree is
+   * snapshotted here, where reading Views is safe) and encoded later on mNotifier's thread.
+   */
   private final class DocumentUpdateListener implements Document.UpdateListener {
     public void onAttributeModified(Object element, String name, String value) {
       AttributeModifiedEvent message = new AttributeModifiedEvent();
       message.nodeId = mDocument.getNodeIdForElement(element);
       message.name = name;
       message.value = value;
-      mPeerManager.sendNotificationToPeers("DOM.attributeModified", message);
+      mNotifier.sendNotification("DOM.attributeModified", message);
     }
 
     public void onAttributeRemoved(Object element, String name) {
       AttributeRemovedEvent message = new AttributeRemovedEvent();
       message.nodeId = mDocument.getNodeIdForElement(element);
       message.name = name;
-      mPeerManager.sendNotificationToPeers("DOM.attributeRemoved", message);
+      mNotifier.sendNotification("DOM.attributeRemoved", message);
     }
 
     public void onInspectRequested(Object element) {
@@ -371,20 +349,17 @@ public class DOM implements ChromeDevtoolsDomain {
       } else {
         InspectNodeRequestedEvent message = new InspectNodeRequestedEvent();
         message.nodeId = nodeId;
-        mPeerManager.sendNotificationToPeers("DOM.inspectNodeRequested", message);
+        mNotifier.sendNotification("DOM.inspectNodeRequested", message);
       }
     }
 
     public void onChildNodeRemoved(
         int parentNodeId,
         int nodeId) {
-      ChildNodeRemovedEvent removedEvent = acquireChildNodeRemovedEvent();
-
+      ChildNodeRemovedEvent removedEvent = new ChildNodeRemovedEvent();
       removedEvent.parentNodeId = parentNodeId;
       removedEvent.nodeId = nodeId;
-      mPeerManager.sendNotificationToPeers("DOM.childNodeRemoved", removedEvent);
-
-      releaseChildNodeRemovedEvent(removedEvent);
+      mNotifier.sendNotification("DOM.childNodeRemoved", removedEvent);
     }
 
     public void onChildNodeInserted(
@@ -393,15 +368,11 @@ public class DOM implements ChromeDevtoolsDomain {
         int parentNodeId,
         int previousNodeId,
         Accumulator<Object> insertedElements) {
-      ChildNodeInsertedEvent insertedEvent = acquireChildNodeInsertedEvent();
-
+      ChildNodeInsertedEvent insertedEvent = new ChildNodeInsertedEvent();
       insertedEvent.parentNodeId = parentNodeId;
       insertedEvent.previousNodeId = previousNodeId;
       insertedEvent.node = createNodeForElement(element, view, insertedElements);
-
-      mPeerManager.sendNotificationToPeers("DOM.childNodeInserted", insertedEvent);
-
-      releaseChildNodeInsertedEvent(insertedEvent);
+      mNotifier.sendNotification("DOM.childNodeInserted", insertedEvent);
     }
   }
 

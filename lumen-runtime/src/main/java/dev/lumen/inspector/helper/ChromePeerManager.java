@@ -20,6 +20,9 @@ import dev.lumen.common.Util;
 import dev.lumen.inspector.jsonrpc.DisconnectReceiver;
 import dev.lumen.inspector.jsonrpc.JsonRpcPeer;
 import dev.lumen.inspector.jsonrpc.PendingRequestCallback;
+import dev.lumen.json.ObjectMapper;
+
+import org.json.JSONObject;
 
 /**
  * Interface glue that allows a particular domain to manage the enabled peers.  The way the
@@ -30,6 +33,7 @@ import dev.lumen.inspector.jsonrpc.PendingRequestCallback;
  */
 public class ChromePeerManager {
   private static final String TAG = "ChromePeerManager";
+  private static final ObjectMapper sObjectMapper = new ObjectMapper();
 
   /**
    * Set of registered peers, mapped to the disconnect receiver for automatic unregistration
@@ -130,9 +134,14 @@ public class ChromePeerManager {
       Object params,
       @Nullable PendingRequestCallback callback) {
     JsonRpcPeer[] peers = getReceivingPeersSnapshot();
+    if (peers.length == 0) {
+      return;
+    }
+    // Map params once; each peer would otherwise redo it (only sessionId differs per peer).
+    JSONObject jsonParams = sObjectMapper.convertValue(params, JSONObject.class);
     for (JsonRpcPeer peer : peers) {
       try {
-        peer.invokeMethod(method, params, callback);
+        peer.invokeMethod(method, jsonParams, callback);
       } catch (NotYetConnectedException e) {
         LogRedirector.e(TAG, "Error delivering data to Chrome", e);
       }

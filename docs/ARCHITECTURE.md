@@ -34,9 +34,8 @@ Manifest-merged providers run before `Application.onCreate`, in `initOrder`:
    socket exists before anything heavy loads; a `DeferredEndpoint` accepts the WebSocket and
    parks messages until the CDP modules attach.
 2. `LumenInitProvider` starts `LumenAgent`: the `EventStore` (logcat pump + network archive),
-   the `MockEngine` (asset rules, recorded overrides), activity tracking for the Elements tree,
-   and the `ChromeDevtoolsServer` with its domains. Disk housekeeping runs on background
-   threads.
+   the `MockEngine` (asset rules, recorded overrides), and the `ChromeDevtoolsServer` with its
+   domains. Disk housekeeping runs on background threads.
 3. `LumenAdbProvider` is exported for `adb shell content call` (shell / root uids only).
 
 Capture is always on from here; DevTools peers only subscribe. That is why traffic and logs
@@ -89,10 +88,10 @@ serves `/json*` discovery or upgrades to a WebSocket. `MethodDispatcher` maps
 unknown methods with `{}` so Chrome's startup sequence never stalls.
 
 Domains (`inspector/protocol/module`): `Network`, `Fetch` + `IO` (overrides / interception),
-`Log`, `Console`, `Runtime`, `Page`, `Target`, `Browser`, `DOM` + `CSS` (Elements), `DOMStorage`
-+ `IndexedDB` + `Storage` (key-value stores), `Database` (SQLite, scriptable only), and
-`Lumen`, a custom domain for segment switching, export, mock rules and the compact queries the
-CLI uses (`listRequests`, `getRequest`, `getLogs`).
+`Log`, `Console`, `Runtime`, `Page`, `Target`, `Browser`, `DOMStorage` + `IndexedDB` + `Storage`
+(key-value stores), `Database` (SQLite, scriptable only), and `Lumen`, a custom domain for
+segment switching, export, mock rules and the compact queries the CLI uses (`listRequests`,
+`getRequest`, `getLogs`).
 
 When `scripts/lumen-proxy.sh` runs, an `app_process` sidecar (`DevtoolsProxy`) holds the
 abstract socket for the whole USB session and forwards to the app's loopback port, so the
@@ -114,7 +113,7 @@ lumen-runtime/src/main/java/dev/lumen/
   init/      providers, early socket bind, loopback CDP for the sidecar
   store/     EventStore, NetworkArchive, LogArchive, BodyCodec, WsFrameLog
   mock/      MockEngine
-  inspector/ CDP server, dispatcher, domains, Elements tree, KV access, network reporting
+  inspector/ CDP server, dispatcher, domains, KV access, network reporting
   server/, websocket/, json/   local socket + HTTP + WebSocket + JSON mapping (from Stetho)
   proxy/     adb sidecar
   ui/        debug notification and log-segment picker

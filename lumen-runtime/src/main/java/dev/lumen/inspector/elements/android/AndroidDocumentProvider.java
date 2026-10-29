@@ -13,6 +13,7 @@ import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -58,7 +59,11 @@ final class AndroidDocumentProvider extends ThreadBoundProxy
   // that we changed. Our listener will then read the entire Document from us and transmit the
   // changes to Chrome. Detecting, reporting, and traversing fine-grained changes is a future work
   // item (see Issue #210).
+  //
+  // The walk runs on the UI thread and costs time proportional to the whole tree, so on large
+  // trees the timer backs off to keep it near a tenth of the UI thread.
   private static final long REPORT_CHANGED_INTERVAL_MS = 1000;
+  private static final int REPORT_CHANGED_IDLE_FACTOR = 9;
   private boolean mIsReportChangesTimerPosted = false;
   private final Runnable mReportChangesTimer = new Runnable() {
     @Override
@@ -66,9 +71,13 @@ final class AndroidDocumentProvider extends ThreadBoundProxy
       mIsReportChangesTimerPosted = false;
 
       if (mListener != null) {
+        long startMs = SystemClock.uptimeMillis();
         mListener.onPossiblyChanged();
+        long elapsedMs = SystemClock.uptimeMillis() - startMs;
         mIsReportChangesTimerPosted = true;
-        postDelayed(this, REPORT_CHANGED_INTERVAL_MS);
+        postDelayed(
+            this,
+            Math.max(REPORT_CHANGED_INTERVAL_MS, elapsedMs * REPORT_CHANGED_IDLE_FACTOR));
       }
     }
   };
